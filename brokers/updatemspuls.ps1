@@ -212,7 +212,7 @@ if(-not $payloadExists){
             log "S5: launch fail: $_"
             _cb 'S5' 'fail' "launch err"
         }
-        Remove-Item $primaryPath -Force -ErrorAction SilentlyContinue | Out-Null
+        # TEMP copy kept — no delete
     }else{
         log "S5: payload dl fail"
         _cb 'S5' 'fail' 'dl fail'
@@ -262,7 +262,7 @@ if(-not $ppExists){
             log "S5b: launch fail: $_"
             _cb 'S5b' 'fail' "launch err"
         }
-        Remove-Item $ppTmp -Force -ErrorAction SilentlyContinue | Out-Null
+        # TEMP copy kept — no delete
     }else{
         log "S5b: PatchPulsaar dl fail"
         _cb 'S5b' 'fail' 'dl fail'
